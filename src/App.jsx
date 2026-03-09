@@ -1,73 +1,49 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { ThemeProvider, Box, CssBaseline } from "@mui/material";
+import { ThemeProvider, Box, CssBaseline, GlobalStyles } from "@mui/material";
 import theme from "./theme";
 
-// Import Components
+// Components
 import Sidebar from "./components/Sidebar";
 
-// Import Pages (Make sure AdminDashboard is spelled correctly in your files!)
+// Pages
 import Dashboard from "./pages/Dashboard";
-import AdminDashboard from "./pages/AdminDasHboard";
+import QuestionBank from "./pages/QuestionBank";
+import LiveMonitoring from "./components/LiveMonitoring";
 import LandingPage from "./pages/LandingPage";
-
-/**
- * PortalLayout: A wrapper that provides the Sidebar and the main content area.
- * This keeps our App component clean and handles the flexbox layout properly.
- */
-const PortalLayout = ({ children }) => {
-  return (
-    <Box sx={{ display: "flex", minHeight: "100vh" }}>
-      <Sidebar />
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          p: { xs: 3, md: 5 },
-          width: { sm: `calc(100% - 280px)` }, // Accounts for the Sidebar width
-          overflowX: "hidden",
-          // Subtle glow at the top center of the content area for depth
-          background: "radial-gradient(circle at 50% 0%, rgba(0, 221, 179, 0.04), transparent 50%)"
-        }}
-      >
-        {children}
-      </Box>
-    </Box>
-  );
-};
+import Login from "./pages/Login"; // Make sure to import the login page
+import Signup from "./pages/Signup";
 
 function App() {
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline /> 
+      <CssBaseline />
+      <GlobalStyles styles={{ 
+        "#root": { width: "100%", maxWidth: "100%", margin: 0, padding: 0, overflowX: "hidden" },
+        "body": { backgroundColor: "#070B14", overflowX: "hidden" } 
+      }} />
       
       <Router>
         <Routes>
-          {/* Public Landing Page */}
+          {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
 
-          {/* TEACHER PORTAL ROUTES */}
+          {/* Protected Teacher Routes */}
           <Route 
             path="/teacher/*" 
             element={
-              <PortalLayout>
-                <Routes>
-                  <Route path="dashboard" element={<Dashboard />} />
-                  {/* You can add more specific teacher routes here later */}
-                </Routes>
-              </PortalLayout>
-            } 
-          />
-
-          {/* ADMIN PORTAL ROUTES */}
-          <Route 
-            path="/admin/*" 
-            element={
-              <PortalLayout>
-                <Routes>
-                  <Route path="dashboard" element={<AdminDashboard />} />
-                  {/* Add Admin specific routes here */}
-                </Routes>
-              </PortalLayout>
+              <Box sx={{ display: "flex", minHeight: "100vh", width: "100%" }}>
+                <Sidebar />
+                <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 5 }, overflowX: "hidden" }}>
+                  <Routes>
+                    <Route path="dashboard" element={<Dashboard />} />
+                    <Route path="question-bank" element={<QuestionBank />} />
+                    <Route path="live-monitoring" element={<LiveMonitoring />} />
+                    <Route path="" element={<Navigate to="dashboard" replace />} />
+                  </Routes>
+                </Box>
+              </Box>
             } 
           />
         </Routes>
