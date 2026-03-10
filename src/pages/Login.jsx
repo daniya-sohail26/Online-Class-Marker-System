@@ -4,8 +4,45 @@ import {
   Link, Stack, ToggleButton, ToggleButtonGroup, GlobalStyles 
 } from "@mui/material";
 import { motion } from "framer-motion";
-import { ShieldCheck, GraduationCap, ArrowRight, Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
+// --- REUSABLE LOGO COMPONENT ---
+const ClassMarkerLogo = ({ size = 48, transparent = false }) => (
+  <svg width={size} height={size} viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#0F172A" />
+        <stop offset="100%" stopColor="#020617" />
+      </linearGradient>
+      <linearGradient id="gridGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.1" />
+        <stop offset="100%" stopColor="#00DDB3" stopOpacity="0.0" />
+      </linearGradient>
+      <linearGradient id="leftLegGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#3B82F6" />
+        <stop offset="100%" stopColor="#06B6D4" />
+      </linearGradient>
+      <linearGradient id="rightLegGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#06B6D4" />
+        <stop offset="100%" stopColor="#00DDB3" />
+      </linearGradient>
+      <filter id="foldShadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="-2" dy="6" stdDeviation="4" floodColor="#000" floodOpacity="0.6" />
+      </filter>
+      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="10" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
+    </defs>
+    {!transparent && <rect width="256" height="256" rx="60" fill="url(#bgGrad)" />}
+    <circle cx="128" cy="128" r="96" fill="none" stroke="url(#gridGrad)" strokeWidth="2" />
+    <circle cx="128" cy="128" r="64" fill="none" stroke="url(#gridGrad)" strokeWidth="1" strokeDasharray="4 6" />
+    <path d="M 56 180 L 92 108 L 140 172 L 200 76" fill="none" stroke="#00DDB3" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" opacity="0.15" filter="url(#glow)" />
+    <path d="M 56 180 L 92 108 L 128 156" fill="none" stroke="url(#leftLegGrad)" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M 104 124 L 140 172 L 200 76" fill="none" stroke="url(#rightLegGrad)" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" filter="url(#foldShadow)" />
+    <circle cx="200" cy="76" r="6" fill="#FFFFFF" filter="url(#glow)" />
+  </svg>
+);
 
 export default function Login() {
   const navigate = useNavigate();
@@ -19,26 +56,40 @@ export default function Login() {
   return (
     <Box sx={{ 
       minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", 
-      bgcolor: "#042F2E", // Deepest teal base
-      backgroundImage: `radial-gradient(circle at 50% 50%, #0D9488 0%, #042F2E 100%)`,
+      bgcolor: "#030712", // Matching the global dark theme
       position: "relative", overflow: "hidden" 
     }}>
-      <GlobalStyles styles={{ body: { backgroundColor: "#042F2E" } }} />
+      <GlobalStyles styles={{ body: { backgroundColor: "#030712" } }} />
 
-      {/* Funky Glowing Orbs - Matching Landing Page */}
-      <Box sx={{ position: "absolute", width: 500, height: 500, background: "radial-gradient(circle, #2DD4BF 0%, transparent 70%)", top: "-10%", left: "-10%", filter: "blur(80px)", opacity: 0.3 }} />
-      <Box sx={{ position: "absolute", width: 500, height: 500, background: "radial-gradient(circle, #00DDB3 0%, transparent 70%)", bottom: "-10%", right: "-10%", filter: "blur(80px)", opacity: 0.2 }} />
+      {/* Global Tech Grid Overlay */}
+      <Box sx={{ position: "absolute", inset: 0, opacity: 0.15, backgroundImage: `radial-gradient(circle at 2px 2px, rgba(255,255,255,0.4) 1px, transparent 0)`, backgroundSize: "40px 40px", pointerEvents: "none" }} />
+
+      {/* Glowing Orbs (Matched to Landing Page palette) */}
+      <Box sx={{ position: "absolute", width: "50vw", height: "50vw", background: "radial-gradient(circle, rgba(0, 221, 179, 0.15) 0%, transparent 60%)", top: "-10%", left: "-10%", filter: "blur(100px)", pointerEvents: "none" }} />
+      <Box sx={{ position: "absolute", width: "60vw", height: "60vw", background: "radial-gradient(circle, rgba(138, 43, 226, 0.1) 0%, transparent 60%)", bottom: "-20%", right: "-10%", filter: "blur(120px)", pointerEvents: "none" }} />
 
       <Container maxWidth="xs" sx={{ position: "relative", zIndex: 1 }}>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, type: "spring" }}>
+          
+          {/* Logo Heading above the card */}
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 1.5, mb: 4 }}>
+            <ClassMarkerLogo size={42} transparent={true} />
+            <Typography variant="h4" sx={{ fontWeight: 900, color: "#fff", letterSpacing: "-0.5px" }}>
+              Class<Box component="span" sx={{ color: "#00DDB3" }}>Marker</Box>
+            </Typography>
+          </Box>
+
           <Card sx={{ 
-            p: 4, bgcolor: "rgba(255, 255, 255, 0.05)", backdropFilter: "blur(20px)", 
-            border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: 8,
-            boxShadow: "0 25px 50px rgba(0,0,0,0.5)"
+            p: { xs: 4, md: 5 }, 
+            bgcolor: "rgba(15, 23, 42, 0.6)", 
+            backdropFilter: "blur(20px)", 
+            border: "1px solid rgba(255, 255, 255, 0.1)", 
+            borderRadius: "32px",
+            boxShadow: "0 30px 60px rgba(0,0,0,0.6)"
           }}>
             <Box sx={{ textAlign: "center", mb: 4 }}>
-              <Typography variant="h4" sx={{ fontWeight: 900, color: "#fff", mb: 1 }}>Sign In</Typography>
-              <Typography variant="body2" sx={{ color: "#2DD4BF" }}>Access your ClassMarker portal</Typography>
+              <Typography variant="h5" sx={{ fontWeight: 800, color: "#fff", mb: 1 }}>Welcome back</Typography>
+              <Typography variant="body2" sx={{ color: "text.secondary" }}>Sign in to access your portal</Typography>
             </Box>
 
             <ToggleButtonGroup
@@ -47,44 +98,54 @@ export default function Login() {
               onChange={(e, val) => val && setRole(val)}
               fullWidth
               sx={{ 
-                mb: 4, bgcolor: "rgba(0,0,0,0.3)", p: 0.5, borderRadius: 4,
-                "& .MuiToggleButton-root": { border: "none", borderRadius: 3, color: "rgba(255,255,255,0.5)" }
+                mb: 4, bgcolor: "rgba(0,0,0,0.4)", p: 0.5, borderRadius: "16px",
+                border: "1px solid rgba(255,255,255,0.05)",
+                "& .MuiToggleButton-root": { border: "none", borderRadius: "12px", color: "rgba(255,255,255,0.5)", textTransform: "none", fontWeight: 600, py: 1.5 }
               }}
             >
-              <ToggleButton value="teacher" sx={{ "&.Mui-selected": { bgcolor: "#00DDB3", color: "#000", fontWeight: 700 } }}>
+              <ToggleButton value="teacher" sx={{ "&.Mui-selected": { bgcolor: "#00DDB3", color: "#000", fontWeight: 800, "&:hover": { bgcolor: "#00DDB3" } } }}>
                 Teacher
               </ToggleButton>
-              <ToggleButton value="admin" sx={{ "&.Mui-selected": { bgcolor: "#2DD4BF", color: "#000", fontWeight: 700 } }}>
+              <ToggleButton value="admin" sx={{ "&.Mui-selected": { bgcolor: "#06B6D4", color: "#000", fontWeight: 800, "&:hover": { bgcolor: "#06B6D4" } } }}>
                 Admin
               </ToggleButton>
             </ToggleButtonGroup>
 
-            <Stack spacing={2.5}>
-              <TextField 
-                fullWidth label="Email Address" variant="filled" 
-                InputProps={{ disableUnderline: true, sx: { borderRadius: 3, bgcolor: "rgba(255,255,255,0.05)", color: "#fff" }}}
-                InputLabelProps={{ sx: { color: "rgba(255,255,255,0.4)" }}}
-              />
-              <TextField 
-                fullWidth label="Password" type="password" variant="filled" 
-                InputProps={{ disableUnderline: true, sx: { borderRadius: 3, bgcolor: "rgba(255,255,255,0.05)", color: "#fff" }}}
-                InputLabelProps={{ sx: { color: "rgba(255,255,255,0.4)" }}}
-              />
+            <Stack spacing={3}>
+              <Box>
+                <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.6)", mb: 1, display: "block", ml: 1, fontWeight: 600 }}>Email Address</Typography>
+                <TextField 
+                  fullWidth variant="filled" 
+                  InputProps={{ disableUnderline: true, sx: { borderRadius: "16px", bgcolor: "rgba(0,0,0,0.3)", color: "#fff", border: "1px solid rgba(255,255,255,0.05)" }}}
+                />
+              </Box>
+
+              <Box>
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1, px: 1 }}>
+                  <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>Password</Typography>
+                  <Link sx={{ color: "#00DDB3", cursor: "pointer", fontSize: "0.75rem", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>Forgot?</Link>
+                </Box>
+                <TextField 
+                  fullWidth type="password" variant="filled" 
+                  InputProps={{ disableUnderline: true, sx: { borderRadius: "16px", bgcolor: "rgba(0,0,0,0.3)", color: "#fff", border: "1px solid rgba(255,255,255,0.05)" }}}
+                />
+              </Box>
               
               <Button
                 fullWidth variant="contained" size="large" onClick={handleLogin}
                 sx={{ 
-                  py: 2, borderRadius: 4, fontWeight: 800, 
+                  py: 2, mt: 2, borderRadius: "50px", fontWeight: 800, fontSize: "1.1rem", textTransform: "none",
                   background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000",
-                  "&:hover": { filter: "brightness(1.1)" }
+                  boxShadow: "0 10px 30px rgba(0,221,179,0.3)",
+                  "&:hover": { filter: "brightness(1.1)", boxShadow: "0 10px 40px rgba(0,221,179,0.5)" }
                 }}
               >
                 Enter Portal
               </Button>
             </Stack>
 
-            <Typography variant="body2" sx={{ mt: 4, textAlign: "center", color: "rgba(255,255,255,0.6)" }}>
-              New user? <Link onClick={() => navigate("/signup")} sx={{ color: "#00DDB3", cursor: "pointer", fontWeight: 700, textDecoration: "none" }}>Create account</Link>
+            <Typography variant="body2" sx={{ mt: 5, textAlign: "center", color: "rgba(255,255,255,0.6)" }}>
+              New to the platform? <Link onClick={() => navigate("/signup")} sx={{ color: "#00DDB3", cursor: "pointer", fontWeight: 700, textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>Create an account</Link>
             </Typography>
           </Card>
         </motion.div>

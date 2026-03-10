@@ -12,6 +12,7 @@ import LiveMonitoring from "./components/LiveMonitoring";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login"; // Make sure to import the login page
 import Signup from "./pages/Signup";
+import TestTemplateBuilder from './pages/TestTemplateBuilder';
 
 function App() {
   return (
@@ -40,6 +41,7 @@ function App() {
                     <Route path="dashboard" element={<Dashboard />} />
                     <Route path="question-bank" element={<QuestionBank />} />
                     <Route path="live-monitoring" element={<LiveMonitoring />} />
+                    <Route path="/template-builder" element={<TestTemplateBuilder />} />
                     <Route path="" element={<Navigate to="dashboard" replace />} />
                   </Routes>
                 </Box>

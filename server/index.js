@@ -1,8 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+// Import our new Factory
+import { QuestionGeneratorFactory } from './services/QuestionFactory.js'; 
 
 dotenv.config();
 
@@ -10,93 +11,35 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Set up Multer to keep files in memory
+// Set up Multer to keep files in memory for Gemini
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
+// --- THE FACTORY-POWERED ENDPOINT ---
 app.post('/api/generate-questions', upload.array('files'), async (req, res) => {
     try {
-        console.log("1. Request received. Files attached:", req.files?.length || 0);
+        // 1. Extract parameters from the React Frontend
+        const { sourceType, prompt, count, difficulty } = req.body;
         
-        const { prompt, count, difficulty } = req.body;
-        
-        // This array will hold the PDF files AND our text instructions
-        const promptParts = [];
+        console.log(`\n=== NEW REQUEST: Source: ${sourceType} | Count: ${count} ===`);
 
-        // 1. Pass the raw PDFs directly to Gemini!
-        if (req.files && req.files.length > 0) {
-            for (const file of req.files) {
-                if (file.mimetype === 'application/pdf') {
-                    console.log(`Attaching PDF directly to Gemini: ${file.originalname}`);
-                    promptParts.push({
-                        inlineData: {
-                            data: file.buffer.toString("base64"),
-                            mimeType: "application/pdf"
-                        }
-                    });
-                }
-            }
-        }
+        // 2. Ask the Factory to give us the correct Generator (AI, Bank, or Hybrid)
+        const generator = QuestionGeneratorFactory.create(sourceType);
 
-        console.log("2. Files processed. Constructing prompt...");
-
-        const systemInstruction = `
-            You are an expert academic examiner. Generate multiple-choice questions based on the attached document(s) and prompt.
-            Return a raw JSON array ONLY. DO NOT wrap it in markdown blockquotes (\`\`\`json).
-            
-            Schema per object:
-            {
-                "text": "The question statement",
-                "options": ["Option A", "Option B", "Option C", "Option D"],
-                "correct": 0, // The index of the correct option (0, 1, 2, or 3)
-                "explanation": "Why this answer is correct.",
-                "tags": ["tag1", "tag2"],
-                "difficulty": "${difficulty || 'Medium'}",
-                "points": 2.0,
-                "isAiGenerated": true
-            }
-        `;
-
-        const userPrompt = `
-            Generate ${count || 5} questions. 
-            Instructions: ${prompt || 'Focus on the core concepts in the attached documents.'}
-        `;
-
-        // Add the text instructions to the payload
-        promptParts.push({ text: systemInstruction + "\n\n" + userPrompt });
-
-        console.log("3. Contacting Gemini Multimodal API...");
-
-        // Call Gemini
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: [{ role: 'user', parts: promptParts }],
-            config: {
-                responseMimeType: "application/json",
-            }
+        // 3. Tell the generator to do its job! We don't care HOW it does it.
+        const questions = await generator.generate({
+            prompt: prompt,
+            count: parseInt(count, 10),
+            difficulty: difficulty,
+            files: req.files
         });
 
-        console.log("4. Received response from Gemini. Parsing JSON...");
-
-        // Robust JSON Parsing
-        let rawText = response.text;
-        rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+        console.log(`=== SUCCESS: Sending ${questions.length} questions back to React ===\n`);
         
-        const generatedQuestions = JSON.parse(rawText);
-        
-        // Add unique IDs
-        const questionsWithIds = generatedQuestions.map((q, index) => ({
-            ...q,
-            id: `ai-${Date.now()}-${index}`
-        }));
-
-        console.log(`5. Success! Sending ${questionsWithIds.length} questions to frontend.`);
-        res.status(200).json(questionsWithIds);
+        // 4. Send the result back to React
+        res.status(200).json(questions);
 
     } catch (error) {
-        console.error(">>> BACKEND CRASH ERROR:", error);
+        console.error("\n>>> BACKEND CRASH ERROR:", error);
         res.status(500).json({ error: error.message || "Failed to generate questions." });
     }
 });
