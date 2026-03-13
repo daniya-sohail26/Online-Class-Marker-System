@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { 
   Box, Typography, Button, TextField, Card, Container, 
-  Link, Stack, ToggleButton, ToggleButtonGroup, GlobalStyles 
+  Link, Stack, ToggleButton, ToggleButtonGroup, GlobalStyles, Alert 
 } from "@mui/material";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { supabase } from "../lib/supabase";
 
 // --- REUSABLE LOGO COMPONENT ---
 const ClassMarkerLogo = ({ size = 48, transparent = false }) => (
@@ -46,11 +47,52 @@ const ClassMarkerLogo = ({ size = 48, transparent = false }) => (
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [role, setRole] = useState("teacher");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (role === "admin") navigate("/admin/dashboard");
-    else navigate("/teacher/dashboard");
+  const handleLogin = async () => {
+    setError("");
+    if (!email.trim() || !password) {
+      setError("Please enter email and password.");
+      return;
+    }
+    if (!supabase) {
+      setError("Database not configured. Check your .env.");
+      return;
+    }
+    setLoading(true);
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setLoading(false);
+    if (authError) {
+      setError(authError.message || "Invalid email or password.");
+      return;
+    }
+    const { data: profile, error: profileError } = await supabase
+      .from("users")
+      .select("role, is_active")
+      .eq("auth_id", data.user.id)
+      .maybeSingle();
+    if (profileError || !profile) {
+      setError(profileError?.message || "No user profile found. Add your account to the users table (see seed_admin_kanza.sql).");
+      await supabase.auth.signOut();
+      return;
+    }
+    if (profile.is_active === false) {
+      setError("Your account is deactivated. Contact admin.");
+      await supabase.auth.signOut();
+      return;
+    }
+    if (profile.role !== "admin" && profile.role !== "teacher") {
+      setError("You do not have access to admin or teacher portals.");
+      await supabase.auth.signOut();
+      return;
+    }
+    const from = location.state?.from?.pathname || (profile.role === "admin" ? "/admin/dashboard" : "/teacher/dashboard");
+    navigate(from, { replace: true });
   };
 
   return (
@@ -92,6 +134,12 @@ export default function Login() {
               <Typography variant="body2" sx={{ color: "text.secondary" }}>Sign in to access your portal</Typography>
             </Box>
 
+            {error && (
+              <Alert severity="error" onClose={() => setError("")} sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+
             <ToggleButtonGroup
               value={role}
               exclusive
@@ -116,6 +164,10 @@ export default function Login() {
                 <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.6)", mb: 1, display: "block", ml: 1, fontWeight: 600 }}>Email Address</Typography>
                 <TextField 
                   fullWidth variant="filled" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  type="email"
+                  autoComplete="email"
                   InputProps={{ disableUnderline: true, sx: { borderRadius: "16px", bgcolor: "rgba(0,0,0,0.3)", color: "#fff", border: "1px solid rgba(255,255,255,0.05)" }}}
                 />
               </Box>
@@ -127,12 +179,15 @@ export default function Login() {
                 </Box>
                 <TextField 
                   fullWidth type="password" variant="filled" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
                   InputProps={{ disableUnderline: true, sx: { borderRadius: "16px", bgcolor: "rgba(0,0,0,0.3)", color: "#fff", border: "1px solid rgba(255,255,255,0.05)" }}}
                 />
               </Box>
               
               <Button
-                fullWidth variant="contained" size="large" onClick={handleLogin}
+                fullWidth variant="contained" size="large" onClick={handleLogin} disabled={loading}
                 sx={{ 
                   py: 2, mt: 2, borderRadius: "50px", fontWeight: 800, fontSize: "1.1rem", textTransform: "none",
                   background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000",
@@ -140,7 +195,7 @@ export default function Login() {
                   "&:hover": { filter: "brightness(1.1)", boxShadow: "0 10px 40px rgba(0,221,179,0.5)" }
                 }}
               >
-                Enter Portal
+                {loading ? "Signing in…" : "Enter Portal"}
               </Button>
             </Stack>
 

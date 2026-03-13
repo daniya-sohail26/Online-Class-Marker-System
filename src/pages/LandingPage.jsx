@@ -158,11 +158,14 @@ export default function LandingPage() {
             <ClassMarkerLogo size={38} transparent={true} />
             <Typography variant="h5" sx={{ fontSize: "1.4rem", fontWeight: 900, color: "#fff", letterSpacing: "-0.5px" }}>Class<Box component="span" sx={{ color: "#00DDB3" }}>Marker</Box></Typography>
           </Box>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <Typography sx={{ display: { xs: "none", md: "block" }, color: "text.secondary", fontWeight: 600, fontSize: "0.95rem", cursor: "pointer", "&:hover": { color: "#00DDB3" } }}>Features</Typography>
-            <Typography sx={{ display: { xs: "none", md: "block" }, color: "text.secondary", fontWeight: 600, fontSize: "0.95rem", cursor: "pointer", "&:hover": { color: "#00DDB3" } }}>Testimonials</Typography>
-            <Button variant="contained" onClick={() => navigate("/teacher/dashboard")} sx={{ borderRadius: "50px", px: 4, py: 1.2, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, background: "#fff", color: "#000", boxShadow: "0 0 20px rgba(255,255,255,0.2)", "&:hover": { background: "#00DDB3", boxShadow: "0 0 30px rgba(0,221,179,0.4)" } }}>
-              Portal Access
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <Typography sx={{ display: { xs: "none", md: "block" }, color: "text.secondary", fontWeight: 600, fontSize: "0.95rem", cursor: "pointer", "&:hover": { color: "#00DDB3" } }} onClick={() => document.getElementById("features")?.scrollIntoView({ behavior: "smooth" })}>Features</Typography>
+            <Typography sx={{ display: { xs: "none", md: "block" }, color: "text.secondary", fontWeight: 600, fontSize: "0.95rem", cursor: "pointer", "&:hover": { color: "#00DDB3" } }} onClick={() => document.getElementById("overview")?.scrollIntoView({ behavior: "smooth" })}>Overview</Typography>
+            <Button variant="text" onClick={() => navigate("/login")} sx={{ color: "text.secondary", fontWeight: 600, textTransform: "none", "&:hover": { color: "#00DDB3", bgcolor: "transparent" } }}>
+              Login
+            </Button>
+            <Button variant="contained" onClick={() => navigate("/signup")} sx={{ borderRadius: "50px", px: 4, py: 1.2, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, background: "#fff", color: "#000", boxShadow: "0 0 20px rgba(255,255,255,0.2)", "&:hover": { background: "#00DDB3", boxShadow: "0 0 30px rgba(0,221,179,0.4)" } }}>
+              Sign Up
             </Button>
           </Box>
         </Box>
@@ -197,11 +200,11 @@ export default function LandingPage() {
 
               <motion.div variants={itemVariants}>
                 <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 4 }}>
-                  <Button variant="contained" size="large" onClick={() => navigate("/teacher/dashboard")} endIcon={<ChevronRight size={20} />} sx={{ px: 5, py: 2.5, borderRadius: "50px", fontSize: "1.1rem", boxShadow: "0 10px 40px rgba(0, 221, 179, 0.4)", fontWeight: 800, background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000", textTransform: "none" }}>
-                    Start Building Free
+                  <Button variant="contained" size="large" onClick={() => navigate("/signup")} endIcon={<ChevronRight size={20} />} sx={{ px: 5, py: 2.5, borderRadius: "50px", fontSize: "1.1rem", boxShadow: "0 10px 40px rgba(0, 221, 179, 0.4)", fontWeight: 800, background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000", textTransform: "none" }}>
+                    Get Started Free
                   </Button>
-                  <Button variant="outlined" size="large" sx={{ px: 5, py: 2.5, borderRadius: "50px", borderColor: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 700, textTransform: "none", fontSize: "1.1rem", "&:hover": { borderColor: "#8A2BE2", bgcolor: "rgba(138,43,226,0.1)", boxShadow: "0 0 30px rgba(138,43,226,0.2)" } }}>
-                    Book a Demo
+                  <Button variant="outlined" size="large" onClick={() => navigate("/login")} sx={{ px: 5, py: 2.5, borderRadius: "50px", borderColor: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 700, textTransform: "none", fontSize: "1.1rem", "&:hover": { borderColor: "#8A2BE2", bgcolor: "rgba(138,43,226,0.1)", boxShadow: "0 0 30px rgba(138,43,226,0.2)" } }}>
+                    Sign In
                   </Button>
                 </Box>
               </motion.div>
@@ -211,8 +214,34 @@ export default function LandingPage() {
         </Grid>
       </Container>
 
+      {/* PLATFORM OVERVIEW */}
+      <Container id="overview" maxWidth="xl" sx={{ position: "relative", zIndex: 5, mb: 20 }}>
+        <Box sx={{ textAlign: "center", mb: 10 }}>
+          <Typography variant="h2" sx={{ color: "#fff", mb: 2, letterSpacing: "-0.03em", fontWeight: 900 }}>Platform Overview</Typography>
+          <Typography variant="h6" color="text.secondary" sx={{ maxWidth: 700, mx: "auto" }}>
+            ClassMarker streamlines your institution&apos;s assessment workflow. Admins set up departments and courses; teachers build and run exams; students take tests with live proctoring—all in one place.
+          </Typography>
+        </Box>
+        <Grid container spacing={4} sx={{ mb: 8 }}>
+          {[
+            { role: "Admin", desc: "Create departments, courses, academic sessions. Manage teachers and students. Bulk upload enrollments. View institutional analytics.", color: "#06B6D4" },
+            { role: "Teacher", desc: "Build question banks with AI, create test templates, publish exams, and monitor students in real time.", color: "#00DDB3" },
+            { role: "Student", desc: "Take timed exams with secure browser lock. Get instant results and feedback after submission.", color: "#8A2BE2" }
+          ].map((item, i) => (
+            <Grid item xs={12} md={4} key={i}>
+              <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: i * 0.1 }}>
+                <Card sx={{ p: 4, height: "100%", bgcolor: "rgba(20, 25, 40, 0.8)", border: `1px solid ${item.color}40`, borderRadius: "24px", "&:hover": { borderColor: item.color, boxShadow: `0 0 30px ${item.color}20` }, transition: "all 0.3s" }}>
+                  <Typography variant="h5" sx={{ color: item.color, fontWeight: 800, mb: 2 }}>{item.role}</Typography>
+                  <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.7 }}>{item.desc}</Typography>
+                </Card>
+              </motion.div>
+            </Grid>
+          ))}
+        </Grid>
+      </Container>
+
       {/* HOW IT WORKS PIPELINE */}
-      <Container maxWidth="xl" sx={{ position: "relative", zIndex: 5, mb: 20 }}>
+      <Container id="features" maxWidth="xl" sx={{ position: "relative", zIndex: 5, mb: 20 }}>
         <Box sx={{ textAlign: "center", mb: 10 }}>
           <Typography variant="h2" sx={{ color: "#fff", mb: 2, letterSpacing: "-0.03em", fontWeight: 900 }}>The assessment pipeline.</Typography>
           <Typography variant="h6" color="text.secondary">From generation to grading in three automated steps.</Typography>
@@ -356,8 +385,8 @@ export default function LandingPage() {
           <Typography variant="h6" sx={{ color: "rgba(255,255,255,0.7)", mb: 6, fontWeight: 500, fontSize: "1.2rem", maxWidth: "80%", mx: "auto" }}>
             The Online Class Marker System handles the heavy lifting so you can focus on what actually matters—teaching.
           </Typography>
-          <Button variant="contained" size="large" onClick={() => navigate("/admin/dashboard")} sx={{ px: 8, py: 3, borderRadius: "50px", fontSize: "1.2rem", fontWeight: 800, color: "#000", background: "linear-gradient(135deg, #00DDB3, #06B6D4)", "&:hover": { filter: "brightness(1.2)", boxShadow: "0 10px 50px rgba(0,221,179,0.6)" }, boxShadow: "0 10px 40px rgba(0,221,179,0.4)", transition: "all 0.3s ease", textTransform: "none" }}>
-            Setup Your Institution
+          <Button variant="contained" size="large" onClick={() => navigate("/signup")} sx={{ px: 8, py: 3, borderRadius: "50px", fontSize: "1.2rem", fontWeight: 800, color: "#000", background: "linear-gradient(135deg, #00DDB3, #06B6D4)", "&:hover": { filter: "brightness(1.2)", boxShadow: "0 10px 50px rgba(0,221,179,0.6)" }, boxShadow: "0 10px 40px rgba(0,221,179,0.4)", transition: "all 0.3s ease", textTransform: "none" }}>
+            Get Started
           </Button>
         </Container>
       </Box>
