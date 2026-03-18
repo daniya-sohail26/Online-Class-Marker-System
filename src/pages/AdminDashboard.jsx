@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { Box, Grid, Typography, Card, Button, Avatar, Table, TableBody, TableCell, TableHead, TableRow, Chip } from "@mui/material";
-import { Users, BookOpen, Building2, UploadCloud, Plus, ArrowRight } from "lucide-react";
+import { Users, BookOpen, Building2, UploadCloud, Plus, ArrowRight, LogOut } from "lucide-react"; // Added LogOut icon
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../contexts/AuthContext"; // Import useAuth hook
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const { signOut } = useAuth(); // Destructure signOut from context
   const [stats, setStats] = useState({ departments: 0, teachers: 0, students: 0 });
   const [recent, setRecent] = useState([]);
 
@@ -51,6 +53,15 @@ export default function AdminDashboard() {
           </Button>
           <Button variant="contained" startIcon={<Plus size={18} />} onClick={() => navigate("/admin/teachers")}>
             Add Teacher
+          </Button>
+          {/* --- Added Logout Button --- */}
+          <Button 
+            variant="contained" 
+            color="error" 
+            startIcon={<LogOut size={18} />} 
+            onClick={signOut}
+          >
+            Log Out
           </Button>
         </Box>
       </Box>

@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { 
   Box, Typography, Button, TextField, Card, Container, 
-  Link, Stack, ToggleButton, ToggleButtonGroup, GlobalStyles 
+  Link, Stack, ToggleButton, ToggleButtonGroup, GlobalStyles, Alert 
 } from "@mui/material";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Lock } from "lucide-react";
+import { supabase } from "../lib/supabase"; // <-- Added Supabase import
 
 // --- REUSABLE LOGO COMPONENT ---
 const ClassMarkerLogo = ({ size = 48, transparent = false }) => (
@@ -75,12 +76,64 @@ const SignupBackground = () => {
 
 export default function Signup() {
   const navigate = useNavigate();
+  
+  // --- NEW: Added state for all form fields ---
   const [role, setRole] = useState("teacher");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSignup = () => {
-    // In a real app, form validation and API call happens here
-    if (role === "admin") navigate("/admin/dashboard");
-    else navigate("/teacher/dashboard");
+  // --- NEW: Supabase Signup Logic ---
+  const handleSignup = async () => {
+    setError("");
+    
+    // Basic validation
+    if (!name.trim() || !email.trim() || !password) {
+        setError("Please fill in all fields.");
+        return;
+    }
+
+    setLoading(true);
+
+    try {
+        // STEP 1: Create the secure user in Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+            email: email.trim(),
+            password: password,
+        });
+
+        if (authError) throw authError;
+
+        if (!authData.user) {
+             throw new Error("Signup failed. Please try again.");
+        }
+
+        // STEP 2: Link the new user to your custom public.users table
+        const { error: dbError } = await supabase
+            .from('users')
+            .insert([
+                {
+                    auth_id: authData.user.id,
+                    name: name.trim(),
+                    email: email.trim(),
+                    role: role, 
+                    is_active: true // Defaults to active so they can login immediately
+                }
+            ]);
+
+        if (dbError) throw dbError;
+
+        // STEP 3: Success! Send them to the login page with a success message
+        navigate('/login', { state: { message: "Account created successfully! Please log in." } });
+
+    } catch (err) {
+        console.error("Signup Error:", err);
+        setError(err.message || "An error occurred during signup.");
+    } finally {
+        setLoading(false);
+    }
   };
 
   return (
@@ -130,6 +183,13 @@ export default function Signup() {
               <Typography variant="body2" sx={{ color: "text.secondary" }}>Setup your academic workspace</Typography>
             </Box>
 
+            {/* --- NEW: Error Alert --- */}
+            {error && (
+              <Alert severity="error" onClose={() => setError("")} sx={{ mb: 3, borderRadius: "12px" }}>
+                {error}
+              </Alert>
+            )}
+
             <ToggleButtonGroup
               value={role}
               exclusive
@@ -155,6 +215,8 @@ export default function Signup() {
                 <TextField 
                   fullWidth variant="outlined" 
                   placeholder="Dr. John Doe"
+                  value={name} // <-- Bound to state
+                  onChange={(e) => setName(e.target.value)} // <-- Bound to state
                   InputProps={{ 
                     sx: { 
                       borderRadius: "16px", bgcolor: "rgba(0,0,0,0.4)", color: "#fff",
@@ -171,6 +233,9 @@ export default function Signup() {
                 <TextField 
                   fullWidth variant="outlined" 
                   placeholder="john@university.edu"
+                  type="email"
+                  value={email} // <-- Bound to state
+                  onChange={(e) => setEmail(e.target.value)} // <-- Bound to state
                   InputProps={{ 
                     sx: { 
                       borderRadius: "16px", bgcolor: "rgba(0,0,0,0.4)", color: "#fff",
@@ -187,6 +252,8 @@ export default function Signup() {
                 <TextField 
                   fullWidth type="password" variant="outlined" 
                   placeholder="••••••••"
+                  value={password} // <-- Bound to state
+                  onChange={(e) => setPassword(e.target.value)} // <-- Bound to state
                   InputProps={{ 
                     sx: { 
                       borderRadius: "16px", bgcolor: "rgba(0,0,0,0.4)", color: "#fff",
@@ -199,7 +266,7 @@ export default function Signup() {
               </Box>
               
               <Button
-                fullWidth variant="contained" size="large" onClick={handleSignup}
+                fullWidth variant="contained" size="large" onClick={handleSignup} disabled={loading}
                 sx={{ 
                   py: 2, mt: 2, borderRadius: "50px", fontWeight: 900, fontSize: "1.1rem", textTransform: "none",
                   background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000",
@@ -208,7 +275,7 @@ export default function Signup() {
                   "&:hover": { filter: "brightness(1.2)", transform: "translateY(-2px)", boxShadow: "0 15px 40px rgba(0,221,179,0.6)" }
                 }}
               >
-                Create Workspace
+                {loading ? "Creating..." : "Create Workspace"}
               </Button>
             </Stack>
 

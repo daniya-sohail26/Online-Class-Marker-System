@@ -2,18 +2,27 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import dotenv from 'dotenv';
-import { createClient } from '@supabase/supabase-js'; // <-- NEW: Import Supabase
+import { createClient } from '@supabase/supabase-js';
+
+// --- NEW: Tools to find the exact file path ---
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Import our new Factory
 import { QuestionGeneratorFactory } from './services/QuestionFactory.js'; 
 
-dotenv.config();
+// --- NEW: Bulletproof .env loader ---
+// This forces Node to look in the 'server' folder for the .env file,
+// no matter what terminal folder you started the server from!
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '.env') }); 
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --- NEW: Initialize Supabase ---
+// --- Initialize Supabase ---
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 // We initialize it here. If the .env variables are missing, it won't crash the whole server.
@@ -55,7 +64,7 @@ app.post('/api/generate-questions', upload.array('files'), async (req, res) => {
 });
 
 
-// --- NEW: THE LIVE MONITORING ENDPOINT ---
+// --- THE LIVE MONITORING ENDPOINT (Untouched) ---
 app.get('/api/live-monitoring', async (req, res) => {
     try {
         if (!supabase) {

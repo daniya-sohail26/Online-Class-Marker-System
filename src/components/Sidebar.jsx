@@ -1,9 +1,10 @@
 import React from "react";
-import { Drawer, List, ListItemButton, ListItemIcon, ListItemText, Typography, Box } from "@mui/material";
-import { LayoutDashboard, BookOpen, Activity, Sparkles } from "lucide-react";
+import { Drawer, List, ListItemButton, ListItemIcon, ListItemText, Typography, Box, Divider } from "@mui/material";
+import { LayoutDashboard, BookOpen, Activity, Sparkles, LogOut } from "lucide-react"; // Added LogOut icon
 import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext"; // Import the hook
 
-// --- CUSTOM SVG LOGO COMPONENT ---
+// --- CUSTOM SVG LOGO COMPONENT (Untouched) ---
 const ClassMarkerLogo = ({ size = 48, transparent = false }) => (
   <svg width={size} height={size} viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
     <defs>
@@ -44,12 +45,12 @@ const ClassMarkerLogo = ({ size = 48, transparent = false }) => (
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { signOut } = useAuth(); // Access signout from context
 
   const menuItems = [
     { text: "Dashboard", icon: <LayoutDashboard size={22} />, path: "/teacher/dashboard" },
     { text: "Test Template Builder", icon: <Sparkles size={22} />, path: "/teacher/template-builder" },
     { text: "Question Bank", icon: <BookOpen size={22} />, path: "/teacher/question-bank" },
-    
     { text: "Live Monitoring", icon: <Activity size={22} />, path: "/teacher/live-monitoring" }
   ];
 
@@ -65,47 +66,63 @@ export default function Sidebar() {
           backdropFilter: "blur(20px)",
           borderRight: "1px solid rgba(255,255,255,0.05)",
           p: 2,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between" // Pushes Logout to bottom
         },
       }}
     >
-      <Box sx={{ p: 2, mb: 4, display: "flex", alignItems: "center", gap: 1.5, cursor: "pointer" }} onClick={() => navigate("/")}>
-        {/* Replaced the Avatar with the dynamic SVG Logo */}
-        <ClassMarkerLogo size={36} transparent={true} />
-        <Typography variant="h5" sx={{ fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" }}>
-          Class<Box component="span" sx={{ color: "#00DDB3" }}>Marker</Box>
-        </Typography>
+      <Box>
+        <Box sx={{ p: 2, mb: 4, display: "flex", alignItems: "center", gap: 1.5, cursor: "pointer" }} onClick={() => navigate("/")}>
+          <ClassMarkerLogo size={36} transparent={true} />
+          <Typography variant="h5" sx={{ fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" }}>
+            Class<Box component="span" sx={{ color: "#00DDB3" }}>Marker</Box>
+          </Typography>
+        </Box>
+
+        <List>
+          {menuItems.map((item) => (
+            <ListItemButton 
+              key={item.text} 
+              onClick={() => navigate(item.path)}
+              selected={location.pathname === item.path}
+              sx={{ 
+                borderRadius: 3, 
+                mb: 1,
+                color: "text.secondary",
+                "&.Mui-selected": {
+                  bgcolor: "rgba(0, 221, 179, 0.12)",
+                  color: "#00DDB3",
+                  "& .MuiListItemIcon-root": { color: "#00DDB3" }
+                }
+              }}
+            >
+              <ListItemIcon sx={{ color: "inherit", minWidth: 45 }}>
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText primary={item.text} primaryTypographyProps={{ fontWeight: 600 }} />
+            </ListItemButton>
+          ))}
+        </List>
       </Box>
 
-      <List>
-        {menuItems.map((item) => (
-          <ListItemButton 
-            key={item.text} 
-            onClick={() => navigate(item.path)}
-            selected={location.pathname === item.path}
-            sx={{ 
-              borderRadius: 3, 
-              mb: 1,
-              color: "text.secondary",
-              transition: "all 0.2s ease",
-              "&.Mui-selected": {
-                bgcolor: "rgba(0, 221, 179, 0.12)",
-                color: "#00DDB3",
-                "& .MuiListItemIcon-root": { color: "#00DDB3" }
-              },
-              "&:hover": {
-                bgcolor: "rgba(255,255,255,0.05)",
-                color: "#fff",
-                "& .MuiListItemIcon-root": { color: "#fff" }
-              }
-            }}
-          >
-            <ListItemIcon sx={{ color: "inherit", minWidth: 45, transition: "color 0.2s ease" }}>
-              {item.icon}
-            </ListItemIcon>
-            <ListItemText primary={item.text} primaryTypographyProps={{ fontWeight: 600 }} />
-          </ListItemButton>
-        ))}
-      </List>
+      {/* --- LOGOUT BUTTON AT BOTTOM --- */}
+      <Box sx={{ mb: 2 }}>
+        <Divider sx={{ mb: 2, opacity: 0.1 }} />
+        <ListItemButton 
+          onClick={signOut}
+          sx={{ 
+            borderRadius: 3, 
+            color: "#EF4444", // Red color
+            "&:hover": { bgcolor: "rgba(239, 68, 68, 0.1)" }
+          }}
+        >
+          <ListItemIcon sx={{ color: "#EF4444", minWidth: 45 }}>
+            <LogOut size={22} />
+          </ListItemIcon>
+          <ListItemText primary="Log Out" primaryTypographyProps={{ fontWeight: 700 }} />
+        </ListItemButton>
+      </Box>
     </Drawer>
   );
 }

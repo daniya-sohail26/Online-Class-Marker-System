@@ -54,45 +54,73 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Catch the success message if coming from Signup page
+  const successMessage = location.state?.message || "";
+
   const handleLogin = async () => {
     setError("");
+    
     if (!email.trim() || !password) {
       setError("Please enter email and password.");
       return;
     }
+    
     if (!supabase) {
       setError("Database not configured. Check your .env.");
       return;
     }
+
     setLoading(true);
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setLoading(false);
-    if (authError) {
-      setError(authError.message || "Invalid email or password.");
-      return;
+
+    try {
+      // 1. Attempt to log in via Auth
+      const { data, error: authError } = await supabase.auth.signInWithPassword({ 
+        email: email.trim(), 
+        password 
+      });
+
+      if (authError) throw authError;
+
+      // Prevent crashes if user data is missing
+      if (!data?.user?.id) {
+        throw new Error("Login failed. Please check your credentials and try again.");
+      }
+
+      // 2. Fetch their custom profile
+      const { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("role, is_active")
+        .eq("auth_id", data.user.id)
+        .maybeSingle();
+
+      if (profileError || !profile) {
+        // Sign them out of auth if they don't have a profile to prevent dead states
+        await supabase.auth.signOut();
+        throw new Error("No user profile found. Add your account to the users table.");
+      }
+
+      if (profile.is_active === false) {
+        await supabase.auth.signOut();
+        throw new Error("Your account is deactivated. Contact admin.");
+      }
+
+      if (profile.role !== "admin" && profile.role !== "teacher") {
+        await supabase.auth.signOut();
+        throw new Error("You do not have access to admin or teacher portals.");
+      }
+
+      // 3. Success! Route them to the correct dashboard based on their database role
+      const from = location.state?.from?.pathname || (profile.role === "admin" ? "/admin/dashboard" : "/teacher/dashboard");
+      navigate(from, { replace: true });
+
+    } catch (err) {
+      console.error("Login Crash Error:", err);
+      // Display the actual error on the screen
+      setError(err.message || "An unexpected error occurred. Please try again.");
+    } finally {
+      // This ALWAYS runs, guaranteeing the button resets back to "Enter Portal"
+      setLoading(false);
     }
-    const { data: profile, error: profileError } = await supabase
-      .from("users")
-      .select("role, is_active")
-      .eq("auth_id", data.user.id)
-      .maybeSingle();
-    if (profileError || !profile) {
-      setError(profileError?.message || "No user profile found. Add your account to the users table (see seed_admin_kanza.sql).");
-      await supabase.auth.signOut();
-      return;
-    }
-    if (profile.is_active === false) {
-      setError("Your account is deactivated. Contact admin.");
-      await supabase.auth.signOut();
-      return;
-    }
-    if (profile.role !== "admin" && profile.role !== "teacher") {
-      setError("You do not have access to admin or teacher portals.");
-      await supabase.auth.signOut();
-      return;
-    }
-    const from = location.state?.from?.pathname || (profile.role === "admin" ? "/admin/dashboard" : "/teacher/dashboard");
-    navigate(from, { replace: true });
   };
 
   return (
@@ -134,8 +162,15 @@ export default function Login() {
               <Typography variant="body2" sx={{ color: "text.secondary" }}>Sign in to access your portal</Typography>
             </Box>
 
+            {/* Display Success Banner if redirected from Signup */}
+            {successMessage && (
+              <Alert severity="success" sx={{ mb: 2, borderRadius: "12px" }}>
+                {successMessage}
+              </Alert>
+            )}
+
             {error && (
-              <Alert severity="error" onClose={() => setError("")} sx={{ mb: 2 }}>
+              <Alert severity="error" onClose={() => setError("")} sx={{ mb: 2, borderRadius: "12px" }}>
                 {error}
               </Alert>
             )}
