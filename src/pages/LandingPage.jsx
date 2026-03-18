@@ -159,8 +159,8 @@ export default function LandingPage() {
             <Typography variant="h5" sx={{ fontSize: "1.4rem", fontWeight: 900, color: "#fff", letterSpacing: "-0.5px" }}>Class<Box component="span" sx={{ color: "#00DDB3" }}>Marker</Box></Typography>
           </Box>
           <Box sx={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <Typography sx={{ display: { xs: "none", md: "block" }, color: "text.secondary", fontWeight: 600, fontSize: "0.95rem", cursor: "pointer", "&:hover": { color: "#00DDB3" } }}>Features</Typography>
-            <Typography sx={{ display: { xs: "none", md: "block" }, color: "text.secondary", fontWeight: 600, fontSize: "0.95rem", cursor: "pointer", "&:hover": { color: "#00DDB3" } }}>Testimonials</Typography>
+            <Typography onClick={() => document.getElementById("features-section")?.scrollIntoView({ behavior: "smooth" })} sx={{ display: { xs: "none", md: "block" }, color: "text.secondary", fontWeight: 600, fontSize: "0.95rem", cursor: "pointer", "&:hover": { color: "#00DDB3" }, transition: "color 0.3s" }}>Features</Typography>
+            <Typography onClick={() => document.getElementById("testimonials-section")?.scrollIntoView({ behavior: "smooth" })} sx={{ display: { xs: "none", md: "block" }, color: "text.secondary", fontWeight: 600, fontSize: "0.95rem", cursor: "pointer", "&:hover": { color: "#00DDB3" }, transition: "color 0.3s" }}>Testimonials</Typography>
             <Button variant="contained" onClick={() => navigate("/teacher/dashboard")} sx={{ borderRadius: "50px", px: 4, py: 1.2, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, background: "#fff", color: "#000", boxShadow: "0 0 20px rgba(255,255,255,0.2)", "&:hover": { background: "#00DDB3", boxShadow: "0 0 30px rgba(0,221,179,0.4)" } }}>
               Portal Access
             </Button>
@@ -200,9 +200,6 @@ export default function LandingPage() {
                   <Button variant="contained" size="large" onClick={() => navigate("/teacher/dashboard")} endIcon={<ChevronRight size={20} />} sx={{ px: 5, py: 2.5, borderRadius: "50px", fontSize: "1.1rem", boxShadow: "0 10px 40px rgba(0, 221, 179, 0.4)", fontWeight: 800, background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000", textTransform: "none" }}>
                     Start Building Free
                   </Button>
-                  <Button variant="outlined" size="large" sx={{ px: 5, py: 2.5, borderRadius: "50px", borderColor: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 700, textTransform: "none", fontSize: "1.1rem", "&:hover": { borderColor: "#8A2BE2", bgcolor: "rgba(138,43,226,0.1)", boxShadow: "0 0 30px rgba(138,43,226,0.2)" } }}>
-                    Book a Demo
-                  </Button>
                 </Box>
               </motion.div>
             </motion.div>
@@ -211,8 +208,8 @@ export default function LandingPage() {
         </Grid>
       </Container>
 
-      {/* HOW IT WORKS PIPELINE */}
-      <Container maxWidth="xl" sx={{ position: "relative", zIndex: 5, mb: 20 }}>
+      {/* HOW IT WORKS PIPELINE - FEATURES SECTION */}
+      <Container maxWidth="xl" sx={{ position: "relative", zIndex: 5, mb: 20 }} id="features-section">
         <Box sx={{ textAlign: "center", mb: 10 }}>
           <Typography variant="h2" sx={{ color: "#fff", mb: 2, letterSpacing: "-0.03em", fontWeight: 900 }}>The assessment pipeline.</Typography>
           <Typography variant="h6" color="text.secondary">From generation to grading in three automated steps.</Typography>
@@ -239,8 +236,8 @@ export default function LandingPage() {
         </Grid>
       </Container>
 
-      {/* EXTENDED BENTO BOX FEATURES GRID */}
-      <Container maxWidth="xl" sx={{ position: "relative", zIndex: 5, mb: 20 }}>
+      {/* EXTENDED BENTO BOX FEATURES GRID - TESTIMONIALS SECTION */}
+      <Container maxWidth="xl" sx={{ position: "relative", zIndex: 5, mb: 20 }} id="testimonials-section">
         <Box sx={{ mb: 8 }}>
           <Typography variant="h2" sx={{ color: "#fff", mb: 2, letterSpacing: "-0.03em", fontWeight: 900 }}>
             The Ultimate <Box component="span" sx={{ color: "#00DDB3" }}>Grading Toolkit.</Box>

@@ -1,6 +1,6 @@
 import React from "react";
 import { Drawer, List, ListItemButton, ListItemIcon, ListItemText, Typography, Box } from "@mui/material";
-import { LayoutDashboard, BookOpen, Activity, Sparkles } from "lucide-react";
+import { LayoutDashboard, BookOpen, Activity, Sparkles, FileText, Plus } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 // --- CUSTOM SVG LOGO COMPONENT ---
@@ -48,8 +48,8 @@ export default function Sidebar() {
   const menuItems = [
     { text: "Dashboard", icon: <LayoutDashboard size={22} />, path: "/teacher/dashboard" },
     { text: "Test Template Builder", icon: <Sparkles size={22} />, path: "/teacher/template-builder" },
+    { text: "Create Test", icon: <Plus size={22} />, path: "/teacher/test-creation" },
     { text: "Question Bank", icon: <BookOpen size={22} />, path: "/teacher/question-bank" },
-    
     { text: "Live Monitoring", icon: <Activity size={22} />, path: "/teacher/live-monitoring" }
   ];
 
