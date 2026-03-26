@@ -13,7 +13,7 @@ import {
   Chip,
 } from "@mui/material";
 import { Users, BookOpen, Building2, GraduationCap, BarChart3, TrendingUp, Percent, Award } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../server/config/supabaseClient";
 
 const PASS_THRESHOLD = 40; // 40% to pass
 

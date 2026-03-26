@@ -17,7 +17,7 @@ import {
   IconButton,
 } from "@mui/material";
 import { Plus, Pencil, Trash2 } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../server/config/supabaseClient"; // <-- Added Supabase import
 
 export default function AdminSessions() {
   const [sessions, setSessions] = useState([]);

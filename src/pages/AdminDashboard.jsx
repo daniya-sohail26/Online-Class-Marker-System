@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Grid, Typography, Card, Button, Avatar, Table, TableBody, TableCell, TableHead, TableRow, Chip } from "@mui/material";
 import { Users, BookOpen, Building2, UploadCloud, Plus, ArrowRight, LogOut } from "lucide-react"; // Added LogOut icon
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../server/config/supabaseClient";
 import { useAuth } from "../contexts/AuthContext"; // Import useAuth hook
 
 export default function AdminDashboard() {

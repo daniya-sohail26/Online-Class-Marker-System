@@ -18,7 +18,7 @@ import {
   TableRow,
 } from "@mui/material";
 import { UploadCloud, FileSpreadsheet, Download } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../server/config/supabaseClient"; // <-- Added Supabase import  
 
 const CSV_TEMPLATE = "name,email,enrollment_number,course_id\nJohn Doe,john@uni.edu,2025-CS-001,\nJane Smith,jane@uni.edu,2025-CS-002,";
 

@@ -13,23 +13,16 @@ import {
   AlertCircle, CheckCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "../services/supabaseClient";
-import {
-  createTemplate,
-  updateTemplate,
-  deleteTemplate,
-  getActiveTemplates,
-  getTemplateById,
-  createQuizPreset,
-  createMidtermPreset,
-  createFinalPreset
-} from "../api/templateApi";
-import { getAllCourses } from "../api/courseApi";
-import { validateTemplateData } from "../utils/validation";
+
+// --- AUTH & DB IMPORTS ---
+import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../../server/config/supabaseClient";
 
 export default function TestTemplateBuilder() {
   const { templateId } = useParams();
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -40,7 +33,6 @@ export default function TestTemplateBuilder() {
   const [showTemplateList, setShowTemplateList] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
 
   // --- 1. COURSE & META STATE ---
   const [selectedCourse, setSelectedCourse] = useState("");
@@ -66,12 +58,71 @@ export default function TestTemplateBuilder() {
     shuffleQs: true,
     shuffleOpts: true,
     allowReview: true,
-    showResults: "Later",
-    lockNav: false,
+    showResultsImmediately: false, // Updated to match DB concept
     maxAttempts: 1,
     strictProctoring: false,
     preventTabSwitch: true
   });
+
+  // --- 🌟 3-STEP BRIDGE FETCHER (Locks onto your course automatically) 🌟 ---
+  useEffect(() => {
+    const fetchTeacherData = async () => {
+      setIsLoading(true);
+      if (!profile) return;
+
+      try {
+        const authId = profile.user_id || profile.id;
+        let dbUserId = authId;
+
+        // 1. BRIDGE THE GAP: users table
+        if (profile.email) {
+          const { data: userByEmail } = await supabase.from("users").select("id").eq("email", profile.email).maybeSingle();
+          if (userByEmail && userByEmail.id) dbUserId = userByEmail.id;
+        }
+
+        if (dbUserId === authId) {
+           const columnsToTry = ["auth_id", "user_id"];
+           for (const col of columnsToTry) {
+               const { data: userByCol } = await supabase.from("users").select("id").eq(col, authId).maybeSingle();
+               if (userByCol && userByCol.id) { dbUserId = userByCol.id; break; }
+           }
+        }
+
+        // 2. FETCH THE COURSE MAPPING
+        const { data: teacherData } = await supabase.from("teachers").select("course_id").eq("user_id", dbUserId).not("course_id", "is", null).maybeSingle();
+
+        if (teacherData && teacherData.course_id) {
+          // 3. FETCH THE COURSE DETAILS
+          const { data: courseData } = await supabase.from("courses").select("id, name").eq("id", teacherData.course_id).maybeSingle();
+          if (courseData) {
+            setAssignedCourses([courseData]);
+            setSelectedCourse(courseData.id);
+            
+            // Load existing templates for this course directly from Supabase
+            const { data: existing } = await supabase.from("templates").select("*").eq("course_id", courseData.id).order("created_at", { ascending: false });
+            if (existing) setExistingTemplates(existing);
+          }
+        } else {
+          setError("No course mapped to this account in the database.");
+        }
+
+        // 4. LOAD SPECIFIC TEMPLATE IF EDITING
+        if (templateId) {
+          const { data: templateData } = await supabase.from("templates").select("*").eq("id", templateId).single();
+          if (templateData) handleEditTemplate(templateData);
+        }
+
+      } catch (err) {
+        console.error("Initialization Error:", err);
+        setError("Failed to load course and templates.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchTeacherData();
+  }, [profile, templateId]);
+
 
   // --- HANDLERS ---
   const handleAddSection = () => {
@@ -90,54 +141,67 @@ export default function TestTemplateBuilder() {
     setBehavior({ ...behavior, [field]: value });
   };
 
+  // --- 🌟 EXACT DB MAPPING SAVE FUNCTION 🌟 ---
   const handleSaveTemplate = async () => {
     setError(null);
+    setSuccess(null);
 
-    // Validate template
-    const templateData = {
-      templateName,
-      testCategory,
-      courseId: selectedCourse,
-      duration: parseInt(duration),
-      passingPercentage: parseInt(passingPercentage),
-      hasSections,
-      sections,
-      marksPerQuestion: parseFloat(marksPerQ) || 0,
-      hasNegativeMarking,
-      penalty: parseFloat(penalty) || 0,
-      behavior,
-      totalQuestions: hasSections ? sections.reduce((acc, s) => acc + (parseInt(s.count) || 0), 0) : parseInt(totalQuestions) || 0
-    };
-
-    if (!selectedCourse || selectedCourse === "all") {
+    if (!selectedCourse) {
       setError("Please select a specific course for this template.");
-      setIsSaving(false);
+      return;
+    }
+    
+    if (!templateName) {
+      setError("Template Name is required.");
       return;
     }
 
     setIsSaving(true);
     try {
-      // Validate template data
-      const validation = validateTemplateData(templateData);
-      if (!validation.isValid) {
-        setError(validation.errors[0]); // Show first error
-        setIsSaving(false);
-        return;
-      }
+      const calculatedTotalQs = hasSections 
+        ? sections.reduce((acc, s) => acc + (parseInt(s.count) || 0), 0) 
+        : parseInt(totalQuestions) || 0;
+
+      // 🌟 EXACT 1:1 SCHEMA MAPPING BASED ON YOUR JSON 🌟
+      const templatePayload = {
+        name: templateName,
+        course_id: selectedCourse,
+        template_type: testCategory,
+        duration_minutes: parseInt(duration),
+        total_questions: calculatedTotalQs,
+        passing_percentage: parseInt(passingPercentage),
+        has_sections: hasSections,
+        sections_config: hasSections ? sections : null, // JSONB column
+        marks_per_question: parseFloat(marksPerQ) || 0,
+        negative_marking_enabled: hasNegativeMarking,
+        negative_marking_penalty: hasNegativeMarking ? (parseFloat(penalty) || 0) : 0,
+        
+        // Unpacked the behavior object directly into the specific columns!
+        shuffle_questions: behavior.shuffleQs,
+        shuffle_options: behavior.shuffleOpts,
+        allow_review: behavior.allowReview,
+        show_results_immediately: behavior.showResultsImmediately,
+        max_attempts: behavior.maxAttempts,
+        strict_proctoring: behavior.strictProctoring,
+        prevent_tab_switch: behavior.preventTabSwitch,
+        
+        is_active: true
+      };
 
       if (editingTemplateId) {
-        await updateTemplate(editingTemplateId, templateData);
+        const { error: dbError } = await supabase.from("templates").update(templatePayload).eq("id", editingTemplateId);
+        if (dbError) throw dbError;
         setSuccess("Template updated successfully!");
         setEditingTemplateId(null);
       } else {
-        await createTemplate(templateData);
+        const { error: dbError } = await supabase.from("templates").insert([templatePayload]);
+        if (dbError) throw dbError;
         setSuccess("Template created successfully!");
       }
 
-      // Redirect to dashboard after a short delay
-      setTimeout(() => {
-        navigate('/teacher/dashboard');
-      }, 1500);
+      // Reload templates into memory
+      const { data: updatedList } = await supabase.from("templates").select("*").eq("course_id", selectedCourse).order("created_at", { ascending: false });
+      if (updatedList) setExistingTemplates(updatedList);
 
       // Reset form
       setTemplateName("");
@@ -149,23 +213,9 @@ export default function TestTemplateBuilder() {
       setMarksPerQ(2.0);
       setHasNegativeMarking(false);
       setPenalty(0.5);
-      setBehavior({
-        shuffleQs: true,
-        shuffleOpts: true,
-        allowReview: true,
-        showResults: "Later",
-        lockNav: false,
-        maxAttempts: 1,
-        strictProctoring: false,
-        preventTabSwitch: true
-      });
-
-      // Reload templates
-      if (selectedCourse) {
-        await loadTemplates(selectedCourse);
-      }
+      
     } catch (err) {
-      const errorMessage = err.message || err.error || "Failed to save template";
+      const errorMessage = err.message || "Failed to save template. Please check database configuration.";
       setError(errorMessage);
       console.error('Template save error:', err);
     } finally {
@@ -173,94 +223,46 @@ export default function TestTemplateBuilder() {
     }
   };
 
-  // Load data on mount
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        setCurrentUser({ id: "teacher-123", name: "Dr. John Smith" });
-
-        const [coursesData, templatesData] = await Promise.all([
-          getAllCourses(),
-          getActiveTemplates()
-        ]);
-
-        setAssignedCourses(coursesData);
-        setExistingTemplates(templatesData);
-
-        // Load specific template if templateId is provided
-        if (templateId) {
-          try {
-            const template = await getTemplateById(templateId);
-            if (template) {
-              handleEditTemplate(template);
-            }
-          } catch (err) {
-            console.error("Failed to load template by ID:", err);
-            setError("The requested template could not be loaded.");
-          }
-        } else if (coursesData.length > 0) {
-          // If no templateId, select the first course by default
-          setSelectedCourse(coursesData[0].id);
-        }
-      } catch (err) {
-        setError("Failed to initialize data. " + (err.message || ""));
-        console.error(err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, [templateId]);
-
-  // No longer need to reload templates on every course change if we're doing it in handleSave
-  // But we might want to filter the visible templates in the summary
-
-  const loadTemplates = async () => {
-    try {
-      const templates = await getActiveTemplates();
-      setExistingTemplates(templates);
-    } catch (err) {
-      console.error("Failed to load templates:", err);
-    }
-  };
-
   const handleEditTemplate = (template) => {
     setEditingTemplateId(template.id);
-    setSelectedCourse(template.courseId || "");
-    setTemplateName(template.name);
-    setTestCategory(template.type);
-    setDuration(template.duration);
-    setPassingPercentage(template.passingPercentage);
-    setHasSections(template.hasSections);
-    setTotalQuestions(template.totalQuestions || 0);
-    setSections(template.sections || []);
-    setMarksPerQ(template.marksPerQuestion ?? 2.0);
-    setHasNegativeMarking(template.negativeMarking ?? false);
-    setPenalty(template.negativeMarkingPenalty ?? 0.5);
-    setBehavior(template.behavior || {
-      shuffleQs: true,
-      shuffleOpts: true,
-      allowReview: true,
-      showResults: "Later",
-      lockNav: false,
-      maxAttempts: 1,
-      strictProctoring: false,
-      preventTabSwitch: true
+    setSelectedCourse(template.course_id || "");
+    setTemplateName(template.name || "");
+    setTestCategory(template.template_type || "Quiz");
+    setDuration(template.duration_minutes || 60);
+    setPassingPercentage(template.passing_percentage || 50);
+    setHasSections(template.has_sections || false);
+    setTotalQuestions(template.total_questions || 0);
+    setSections(template.sections_config || [{ id: 1, name: "General Knowledge", count: 10, difficulty: "Mixed", topic: "All" }]);
+    setMarksPerQ(template.marks_per_question ?? 2.0);
+    setHasNegativeMarking(template.negative_marking_enabled ?? false);
+    setPenalty(template.negative_marking_penalty ?? 0.5);
+    
+    // Repack the individual columns back into the behavior state object
+    setBehavior({
+      shuffleQs: template.shuffle_questions ?? true, 
+      shuffleOpts: template.shuffle_options ?? true, 
+      allowReview: template.allow_review ?? true, 
+      showResultsImmediately: template.show_results_immediately ?? false, 
+      lockNav: template.lock_section_navigation ?? false, 
+      maxAttempts: template.max_attempts ?? 1, 
+      strictProctoring: template.strict_proctoring ?? false, 
+      preventTabSwitch: template.prevent_tab_switch ?? true
     });
     setShowTemplateList(false);
   };
 
   const handleDeleteTemplate = async () => {
     try {
-      await deleteTemplate(templateToDelete.id);
+      const { error: dbError } = await supabase.from("templates").delete().eq("id", templateToDelete.id);
+      if (dbError) throw dbError;
+      
       setSuccess("Template deleted successfully!");
       setDeleteConfirmOpen(false);
       setTemplateToDelete(null);
+      
       if (selectedCourse) {
-        await loadTemplates(selectedCourse);
+        const { data: updatedList } = await supabase.from("templates").select("*").eq("course_id", selectedCourse).order("created_at", { ascending: false });
+        if (updatedList) setExistingTemplates(updatedList);
       }
     } catch (err) {
       setError("Failed to delete template");
@@ -279,15 +281,6 @@ export default function TestTemplateBuilder() {
 
       {!isLoading && (
         <>
-          {/* HEADER INFO ABOUT UUIDs */}
-          {error && error.includes("uuid") && (
-            <Alert severity="info" sx={{ mb: 3, bgcolor: "rgba(2, 132, 199, 0.1)", color: "#7dd3fc", border: "1px solid rgba(2, 132, 199, 0.2)" }}>
-              <Typography variant="body2">
-                <strong>Pro Tip:</strong> "UUID" error usually means the system expected a unique ID (like a Course ID) but received text like "all" or "None".
-                Please ensure a specific course is selected from the dropdown.
-              </Typography>
-            </Alert>
-          )}
           {/* ERROR ALERT */}
           {error && (
             <Alert severity="error" sx={{ mb: 3, borderRadius: "12px" }} onClose={() => setError(null)}>
@@ -535,9 +528,9 @@ export default function TestTemplateBuilder() {
                     </Grid>
                     <Grid item xs={12} sm={6}>
                       <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.5)", mb: 1, display: "block", ml: 1 }}>When are results shown?</Typography>
-                      <Select fullWidth variant="filled" value={behavior?.showResults || "Later"} onChange={(e) => handleBehaviorChange("showResults", e.target.value)} disableUnderline sx={{ borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)", color: "#fff", fontWeight: 600, border: "1px solid rgba(255,255,255,0.05)" }}>
-                        <MenuItem value="Immediately">Immediately on Submit</MenuItem>
-                        <MenuItem value="Later">Manual Release by Teacher</MenuItem>
+                      <Select fullWidth variant="filled" value={behavior?.showResultsImmediately} onChange={(e) => handleBehaviorChange("showResultsImmediately", e.target.value)} disableUnderline sx={{ borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)", color: "#fff", fontWeight: 600, border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <MenuItem value={true}>Immediately on Submit</MenuItem>
+                        <MenuItem value={false}>Manual Release by Teacher</MenuItem>
                       </Select>
                     </Grid>
                   </Grid>
@@ -555,7 +548,7 @@ export default function TestTemplateBuilder() {
                   <Box sx={{ p: 3, bgcolor: "rgba(0,0,0,0.4)", textAlign: "center", borderBottom: "1px dashed rgba(255,255,255,0.2)" }}>
                     <Typography variant="overline" sx={{ color: "#00DDB3", fontWeight: 800, letterSpacing: "1px" }}>{testCategory} Blueprint</Typography>
                     <Typography variant="h5" sx={{ fontWeight: 900, mt: 1, lineHeight: 1.2 }}>{templateName || "Untitled Template"}</Typography>
-                    <Typography variant="caption" sx={{ color: "#06B6D4", mt: 1, display: "block", fontWeight: 600 }}>{selectedCourse}</Typography>
+                    <Typography variant="caption" sx={{ color: "#06B6D4", mt: 1, display: "block", fontWeight: 600 }}>{assignedCourses.find(c => c.id === selectedCourse)?.name || 'Select a course'}</Typography>
                   </Box>
 
                   <Box sx={{ p: 3 }}>
@@ -614,7 +607,7 @@ export default function TestTemplateBuilder() {
                   </Box>
 
                   <Box sx={{ p: 2, bgcolor: "rgba(0,0,0,0.3)", textAlign: "center" }}>
-                    <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.4)" }}>Template will be linked to {assignedCourses.find(c => c.id === selectedCourse)?.name || 'selected course'}</Typography>
+                    <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.4)" }}>Template will be linked to your course automatically.</Typography>
                   </Box>
                 </Card>
               </Box>
@@ -625,7 +618,7 @@ export default function TestTemplateBuilder() {
           {/* TEMPLATE LIST MODAL */}
           <Dialog open={showTemplateList} onClose={() => setShowTemplateList(false)} maxWidth="md" fullWidth>
             <DialogTitle sx={{ fontWeight: 800, fontSize: "1.3rem" }}>
-              Existing Templates for {assignedCourses.find(c => c.id === selectedCourse)?.name}
+              Existing Templates for {assignedCourses.find(c => c.id === selectedCourse)?.name || 'Course'}
             </DialogTitle>
             <DialogContent sx={{ pt: 3 }}>
               {existingTemplates.length === 0 ? (
@@ -639,7 +632,7 @@ export default function TestTemplateBuilder() {
                       <Box>
                         <Typography sx={{ fontWeight: 700, mb: 0.5 }}>{template.name}</Typography>
                         <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>
-                          {template.type} • {template.duration} mins • {template.totalQuestions} questions
+                          {template.template_type} • {template.duration_minutes} mins • {template.total_questions} questions
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', gap: 1 }}>

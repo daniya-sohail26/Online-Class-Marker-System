@@ -107,23 +107,20 @@ class HybridGenerator extends IQuestionGenerator {
     constructor() {
         super();
         this.aiGenerator = new AIQuestionGenerator();
-        this.manualGenerator = new ManualQuestionGenerator();
     }
 
     async generate(params) {
         console.log("--> [Hybrid Generator] Initializing Split Generation (AI + Manual Blanks)...");
         
-        const totalCount = parseInt(params.count) || 5;
-        const manualCount = Math.floor(totalCount / 2);
-        const aiCount = totalCount - manualCount; 
+
+        const aiCount = totalCount 
 
         // Execute both generators in parallel
-        const [manualQuestions, aiQuestions] = await Promise.all([
-            this.manualGenerator.generate({ ...params, count: manualCount }),
+        const [aiQuestions] = await Promise.all([
             this.aiGenerator.generate({ ...params, count: aiCount })
         ]);
 
-        const combined = [...aiQuestions, ...manualQuestions];
+        const combined = [...aiQuestions];
         return combined; 
     }
 }

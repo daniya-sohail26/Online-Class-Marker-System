@@ -21,7 +21,7 @@ import {
 } from "@mui/material";
 import { Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../server/config/supabaseClient"; // <-- Added Supabase import
 
 export default function AdminStudents() {
   const navigate = useNavigate();

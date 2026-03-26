@@ -6,7 +6,7 @@ import {
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Lock } from "lucide-react";
-import { supabase } from "../lib/supabase"; // <-- Added Supabase import
+import { supabase } from "../../server/config/supabaseClient"; // <-- Added Supabase import
 
 // --- REUSABLE LOGO COMPONENT ---
 const ClassMarkerLogo = ({ size = 48, transparent = false }) => (

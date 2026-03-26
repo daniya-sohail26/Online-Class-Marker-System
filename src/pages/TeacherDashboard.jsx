@@ -862,4 +862,3 @@ export default function TeacherDashboard() {
     </Box>
   );
 }
-

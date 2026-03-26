@@ -1,10 +1,16 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
+import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
+import { supabase } from "../../server/config/supabaseClient";
 
-const AuthContext = createContext({ user: null, profile: null, loading: true, signOut: () => {} });
+const AuthContext = createContext({ 
+  user: null, 
+  profile: null, 
+  loading: true, 
+  signOut: async () => {} 
+});
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
   return ctx;
 }
 
@@ -13,87 +19,97 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // --- NUCLEAR SIGN OUT ---
-  // This clears Supabase AND wipes the browser storage to fix "Lock" errors
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
-      
-      // Clear storage to reset the "Lock broken" bug
       localStorage.clear();
       sessionStorage.clear();
-      
-      // Clear IndexedDB (where the lock lives)
-      const dbs = await window.indexedDB.databases();
-      dbs.forEach(db => window.indexedDB.deleteDatabase(db.name));
-
       setUser(null);
       setProfile(null);
-      window.location.href = "/login"; // Force reload to clean memory
+      window.location.replace("/login"); 
     } catch (err) {
       console.error("Signout Error:", err);
-      localStorage.clear();
-      window.location.reload();
+      window.location.href = "/login";
     }
   };
 
   useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchProfileData = async (authUser) => {
-      if (!authUser) return null;
-      try {
-        const { data, error } = await supabase
-          .from("users")
-          .select("id, name, email, role, is_active")
-          .eq("auth_id", authUser.id)
-          .maybeSingle();
-        if (error) return null;
-        return data;
-      } catch {
-        return null;
-      }
-    };
+    let mounted = true;
 
     const handleAuthState = async (sessionUser) => {
-      if (sessionUser) {
-        setUser(sessionUser);
-        const p = await fetchProfileData(sessionUser);
-        if (p?.is_active !== false) setProfile(p);
-        else setProfile(null);
-      } else {
-        setUser(null);
-        setProfile(null);
+      if (!sessionUser) {
+        if (mounted) {
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+        }
+        return;
       }
-    };
 
-    const setupAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        await handleAuthState(session?.user || null);
+        if (mounted) setUser(sessionUser);
+
+        // 🌟 THE FIX: Read the exact role they clicked on the Login screen!
+        const intendedRole = localStorage.getItem("portal_role") || "teacher";
+
+        if (intendedRole === "admin") {
+          if (mounted) {
+            setProfile({
+              id: sessionUser.user_id,
+              role: "admin", // This forces the router to let you into the Admin dashboard
+              name: "Admin User",
+              email: sessionUser.email,
+              is_active: true
+            });
+          }
+          return;
+        }
+
+        // Normal Teacher Flow
+        const { data: teacherData } = await supabase
+          .from("teachers")
+          .select("*")
+          .eq("user_id", sessionUser.id)
+          .maybeSingle();
+
+        if (mounted) {
+          setProfile({
+            id: teacherData?.id || sessionUser.id,
+            user_id: sessionUser.id,
+            role: "teacher",
+            name: sessionUser.email.split('@')[0], 
+            email: sessionUser.email,
+            is_active: true
+          });
+        }
       } catch (err) {
-        console.error("Auth Init Error:", err);
+        console.error("AuthContext Profile Error:", err);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
 
-    setupAuth();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleAuthState(session?.user || null);
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      await handleAuthState(session?.user || null);
-      setLoading(false);
+      handleAuthState(session?.user || null);
     });
 
     return () => {
+      mounted = false;
       if (subscription) subscription.unsubscribe();
     };
   }, []);
 
-  const value = { user, profile, loading, signOut };
+  const value = useMemo(() => ({ 
+    user, profile, loading, signOut 
+  }), [user, profile, loading]);
   
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
 }

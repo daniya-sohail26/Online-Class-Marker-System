@@ -22,7 +22,7 @@ import {
   IconButton,
 } from "@mui/material";
 import { Plus, Trash2 } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../server/config/supabaseClient"; // <-- Added Supabase import
 
 export default function AdminTeachers() {
   const [teachers, setTeachers] = useState([]);

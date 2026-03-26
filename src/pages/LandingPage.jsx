@@ -164,9 +164,9 @@ export default function LandingPage() {
             <Button variant="text" onClick={() => navigate("/login")} sx={{ color: "text.secondary", fontWeight: 600, textTransform: "none", "&:hover": { color: "#00DDB3", bgcolor: "transparent" } }}>
               Login
             </Button>
-            <Button variant="contained" onClick={() => navigate("/signup")} sx={{ borderRadius: "50px", px: 4, py: 1.2, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, background: "#fff", color: "#000", boxShadow: "0 0 20px rgba(255,255,255,0.2)", "&:hover": { background: "#00DDB3", boxShadow: "0 0 30px rgba(0,221,179,0.4)" } }}>
+            {/* <Button variant="contained" onClick={() => navigate("/signup")} sx={{ borderRadius: "50px", px: 4, py: 1.2, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, background: "#fff", color: "#000", boxShadow: "0 0 20px rgba(255,255,255,0.2)", "&:hover": { background: "#00DDB3", boxShadow: "0 0 30px rgba(0,221,179,0.4)" } }}>
               Sign Up
-            </Button>
+            </Button> */}
           </Box>
         </Box>
       </Container>
@@ -200,7 +200,7 @@ export default function LandingPage() {
 
               <motion.div variants={itemVariants}>
                 <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 4 }}>
-                  <Button variant="contained" size="large" onClick={() => navigate("/signup")} endIcon={<ChevronRight size={20} />} sx={{ px: 5, py: 2.5, borderRadius: "50px", fontSize: "1.1rem", boxShadow: "0 10px 40px rgba(0, 221, 179, 0.4)", fontWeight: 800, background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000", textTransform: "none" }}>
+                  <Button variant="contained" size="large" onClick={() => navigate("/login")} endIcon={<ChevronRight size={20} />} sx={{ px: 5, py: 2.5, borderRadius: "50px", fontSize: "1.1rem", boxShadow: "0 10px 40px rgba(0, 221, 179, 0.4)", fontWeight: 800, background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000", textTransform: "none" }}>
                     Get Started Free
                   </Button>
                   <Button variant="outlined" size="large" onClick={() => navigate("/login")} sx={{ px: 5, py: 2.5, borderRadius: "50px", borderColor: "rgba(255,255,255,0.2)", color: "#fff", fontWeight: 700, textTransform: "none", fontSize: "1.1rem", "&:hover": { borderColor: "#8A2BE2", bgcolor: "rgba(138,43,226,0.1)", boxShadow: "0 0 30px rgba(138,43,226,0.2)" } }}>
@@ -385,7 +385,7 @@ export default function LandingPage() {
           <Typography variant="h6" sx={{ color: "rgba(255,255,255,0.7)", mb: 6, fontWeight: 500, fontSize: "1.2rem", maxWidth: "80%", mx: "auto" }}>
             The Online Class Marker System handles the heavy lifting so you can focus on what actually matters—teaching.
           </Typography>
-          <Button variant="contained" size="large" onClick={() => navigate("/signup")} sx={{ px: 8, py: 3, borderRadius: "50px", fontSize: "1.2rem", fontWeight: 800, color: "#000", background: "linear-gradient(135deg, #00DDB3, #06B6D4)", "&:hover": { filter: "brightness(1.2)", boxShadow: "0 10px 50px rgba(0,221,179,0.6)" }, boxShadow: "0 10px 40px rgba(0,221,179,0.4)", transition: "all 0.3s ease", textTransform: "none" }}>
+          <Button variant="contained" size="large" onClick={() => navigate("/login")} sx={{ px: 8, py: 3, borderRadius: "50px", fontSize: "1.2rem", fontWeight: 800, color: "#000", background: "linear-gradient(135deg, #00DDB3, #06B6D4)", "&:hover": { filter: "brightness(1.2)", boxShadow: "0 10px 50px rgba(0,221,179,0.6)" }, boxShadow: "0 10px 40px rgba(0,221,179,0.4)", transition: "all 0.3s ease", textTransform: "none" }}>
             Get Started
           </Button>
         </Container>

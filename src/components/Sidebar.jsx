@@ -51,7 +51,8 @@ export default function Sidebar() {
     { text: "Dashboard", icon: <LayoutDashboard size={22} />, path: "/teacher/dashboard" },
     { text: "Test Template Builder", icon: <Sparkles size={22} />, path: "/teacher/template-builder" },
     { text: "Question Bank", icon: <BookOpen size={22} />, path: "/teacher/question-bank" },
-    { text: "Live Monitoring", icon: <Activity size={22} />, path: "/teacher/live-monitoring" }
+    { text: "Live Monitoring", icon: <Activity size={22} />, path: "/teacher/live-monitoring" },
+    { text: "Evaluation Panel", icon: <BookOpen size={22} />, path: "/teacher/evaluation" }
   ];
 
   return (

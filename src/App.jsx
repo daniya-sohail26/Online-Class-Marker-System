@@ -1,4 +1,9 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
 import { ThemeProvider, Box, CssBaseline, GlobalStyles } from "@mui/material";
 import theme from "./theme";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -25,15 +30,23 @@ import AdminStudents from "./pages/admin/AdminStudents";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminBulkUpload from "./pages/admin/AdminBulkUpload";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
-
+import TeacherEvaluationPanel from "./pages/EvaluationDashboard";
 function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <GlobalStyles styles={{ 
-        "#root": { width: "100%", maxWidth: "100%", margin: 0, padding: 0, overflowX: "hidden" },
-        "body": { backgroundColor: "#070B14", overflowX: "hidden" } 
-      }} />
+      <GlobalStyles
+        styles={{
+          "#root": {
+            width: "100%",
+            maxWidth: "100%",
+            margin: 0,
+            padding: 0,
+            overflowX: "hidden",
+          },
+          body: { backgroundColor: "#070B14", overflowX: "hidden" },
+        }}
+      />
       <AuthProvider>
         <Router>
           <Routes>
@@ -43,50 +56,93 @@ function App() {
             <Route path="/signup" element={<Signup />} />
 
             {/* Protected Teacher Routes */}
-            <Route 
-              path="/teacher/*" 
+            <Route
+              path="/teacher/*"
               element={
                 <TeacherRoute>
-                  <Box sx={{ display: "flex", minHeight: "100vh", width: "100%" }}>
+                  <Box
+                    sx={{ display: "flex", minHeight: "100vh", width: "100%" }}
+                  >
                     <Sidebar />
-                    <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 5 }, overflowX: "hidden" }}>
+                    <Box
+                      component="main"
+                      sx={{
+                        flexGrow: 1,
+                        p: { xs: 2, md: 5 },
+                        overflowX: "hidden",
+                      }}
+                    >
                       <Routes>
                         <Route path="dashboard" element={<Dashboard />} />
-                        <Route path="question-bank" element={<QuestionBank />} />
-                        <Route path="live-monitoring" element={<LiveMonitoring />} />
-                        <Route path="/template-builder" element={<TestTemplateBuilder />} />
-                        <Route path="" element={<Navigate to="dashboard" replace />} />
+                        <Route
+                          path="question-bank"
+                          element={<QuestionBank />}
+                        />
+                        <Route
+                          path="live-monitoring"
+                          element={<LiveMonitoring />}
+                        />
+                        <Route
+                          path="/template-builder"
+                          element={<TestTemplateBuilder />}
+                        />
+                        <Route
+                          path="/evaluation"
+                          element={<TeacherEvaluationPanel />}
+                        />
+                        <Route
+                          path=""
+                          element={<Navigate to="dashboard" replace />}
+                        />
                       </Routes>
                     </Box>
                   </Box>
                 </TeacherRoute>
-              } 
+              }
             />
 
             {/* Admin Portal Routes */}
-            <Route 
-              path="/admin/*" 
+            <Route
+              path="/admin/*"
               element={
                 <AdminRoute>
-                  <Box sx={{ display: "flex", minHeight: "100vh", width: "100%" }}>
+                  <Box
+                    sx={{ display: "flex", minHeight: "100vh", width: "100%" }}
+                  >
                     <AdminSidebar />
-                    <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, md: 5 }, overflowX: "hidden" }}>
+                    <Box
+                      component="main"
+                      sx={{
+                        flexGrow: 1,
+                        p: { xs: 2, md: 5 },
+                        overflowX: "hidden",
+                      }}
+                    >
                       <Routes>
                         <Route path="dashboard" element={<AdminDashboard />} />
-                        <Route path="departments" element={<AdminDepartments />} />
+                        <Route
+                          path="departments"
+                          element={<AdminDepartments />}
+                        />
                         <Route path="courses" element={<AdminCourses />} />
                         <Route path="sessions" element={<AdminSessions />} />
                         <Route path="teachers" element={<AdminTeachers />} />
                         <Route path="students" element={<AdminStudents />} />
                         <Route path="users" element={<AdminUsers />} />
-                        <Route path="bulk-upload" element={<AdminBulkUpload />} />
+                        <Route
+                          path="bulk-upload"
+                          element={<AdminBulkUpload />}
+                        />
                         <Route path="analytics" element={<AdminAnalytics />} />
-                        <Route path="" element={<Navigate to="dashboard" replace />} />
+                        <Route
+                          path=""
+                          element={<Navigate to="dashboard" replace />}
+                        />
                       </Routes>
                     </Box>
                   </Box>
                 </AdminRoute>
-              } 
+              }
             />
           </Routes>
         </Router>

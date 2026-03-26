@@ -14,7 +14,7 @@ import {
   Avatar,
 } from "@mui/material";
 import { UserCheck, UserX } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../server/config/supabaseClient"; // <-- Added Supabase import
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);

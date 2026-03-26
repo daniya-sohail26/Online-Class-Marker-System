@@ -20,6 +20,7 @@
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
     "@supabase/supabase-js": "^2.99.1",
+    "axios": "^1.13.6",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
@@ -31,6 +32,8 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
