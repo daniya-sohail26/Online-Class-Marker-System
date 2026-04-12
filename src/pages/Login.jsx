@@ -57,6 +57,10 @@ export default function Login() {
     const fromPath = location.state?.from?.pathname;
     const role = profile.role;
 
+    if (profile.adminPortalDenied) {
+      return;
+    }
+
     if (role === "admin") {
       const target =
         fromPath && fromPath.startsWith("/admin")
@@ -74,7 +78,7 @@ export default function Login() {
       return;
     }
     // student / unknown: stay on /login (navbar "Login", sign out, switch account) — no redirect to /
-  }, [profile?.id, profile?.role, navigate, location.pathname, location.state?.from?.pathname]);
+  }, [profile?.id, profile?.role, profile?.adminPortalDenied, navigate, location.pathname, location.state?.from?.pathname]);
 
   const handleLogin = async (e) => {
     e.preventDefault(); 
@@ -135,6 +139,27 @@ export default function Login() {
             </Box>
 
             {successMessage && <Alert severity="success" sx={{ mb: 2, borderRadius: "12px" }}>{successMessage}</Alert>}
+            {profile?.adminPortalDenied && (
+              <Alert
+                severity="warning"
+                sx={{ mb: 2, borderRadius: "12px" }}
+                action={
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => {
+                      localStorage.setItem("portal_role", "teacher");
+                      window.location.reload();
+                    }}
+                  >
+                    Continue to Teacher portal
+                  </Button>
+                }
+              >
+                You chose <strong>Admin</strong>, but this account is a <strong>teacher</strong> in the database. The Admin portal only opens for users with{" "}
+                <code style={{ color: "inherit" }}>role = &apos;admin&apos;</code> in <code style={{ color: "inherit" }}>public.users</code>. Ask a database admin to update your row, or use the button to open the Teacher portal.
+              </Alert>
+            )}
             {error && <Alert severity="error" onClose={() => setError("")} sx={{ mb: 2, borderRadius: "12px" }}>{error}</Alert>}
 
             <ToggleButtonGroup

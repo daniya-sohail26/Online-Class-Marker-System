@@ -101,6 +101,8 @@ export function AuthProvider({ children }) {
               role: "teacher",
               name: userRow.name,
               email: userRow.email,
+              /** True when login toggle was Admin but public.users.role is still teacher */
+              adminPortalDenied: intendedRole === "admin",
             });
           }
           return;
