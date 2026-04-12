@@ -31,6 +31,8 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminBulkUpload from "./pages/admin/AdminBulkUpload";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
 import TeacherEvaluationPanel from "./pages/EvaluationDashboard";
+import StudentExamResults from "./pages/StudentExamResults";
+
 function App() {
   return (
     <ThemeProvider theme={theme}>
@@ -54,6 +56,7 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/exam-results/:attemptId" element={<StudentExamResults />} />
 
             {/* Protected Teacher Routes */}
             <Route

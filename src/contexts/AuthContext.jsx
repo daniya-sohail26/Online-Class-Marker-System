@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
 import { supabase } from "../../server/config/supabaseClient";
 
-const AuthContext = createContext({ 
-  user: null, 
-  profile: null, 
-  loading: true, 
-  signOut: async () => {} 
+const AuthContext = createContext({
+  user: null,
+  profile: null,
+  loading: true,
+  signOut: async () => {},
 });
 
 export function useAuth() {
@@ -26,7 +26,7 @@ export function AuthProvider({ children }) {
       sessionStorage.clear();
       setUser(null);
       setProfile(null);
-      window.location.replace("/login"); 
+      window.location.replace("/login");
     } catch (err) {
       console.error("Signout Error:", err);
       window.location.href = "/login";
@@ -49,37 +49,83 @@ export function AuthProvider({ children }) {
       try {
         if (mounted) setUser(sessionUser);
 
-        // 🌟 THE FIX: Read the exact role they clicked on the Login screen!
         const intendedRole = localStorage.getItem("portal_role") || "teacher";
 
-        if (intendedRole === "admin") {
+        const { data: userRow, error: userErr } = await supabase
+          .from("users")
+          .select("*")
+          .eq("auth_id", sessionUser.id)
+          .maybeSingle();
+
+        if (userErr) {
+          console.error("users lookup:", userErr);
+        }
+
+        if (!userRow) {
           if (mounted) {
             setProfile({
-              id: sessionUser.user_id,
-              role: "admin", // This forces the router to let you into the Admin dashboard
-              name: "Admin User",
+              publicUserId: null,
+              role: intendedRole === "admin" ? "admin" : "unknown",
+              name: sessionUser.email?.split("@")[0] || "User",
               email: sessionUser.email,
-              is_active: true
             });
           }
           return;
         }
 
-        // Normal Teacher Flow
-        const { data: teacherData } = await supabase
-          .from("teachers")
-          .select("*")
-          .eq("user_id", sessionUser.id)
-          .maybeSingle();
+        if (intendedRole === "admin" && userRow.role === "admin") {
+          if (mounted) {
+            setProfile({
+              publicUserId: userRow.id,
+              id: userRow.id,
+              role: "admin",
+              name: userRow.name,
+              email: userRow.email,
+            });
+          }
+          return;
+        }
+
+        if (userRow.role === "teacher") {
+          const { data: teacherData } = await supabase
+            .from("teachers")
+            .select("*")
+            .eq("user_id", userRow.id)
+            .maybeSingle();
+
+          if (mounted) {
+            setProfile({
+              publicUserId: userRow.id,
+              teacherId: teacherData?.id,
+              id: teacherData?.id ?? userRow.id,
+              role: "teacher",
+              name: userRow.name,
+              email: userRow.email,
+            });
+          }
+          return;
+        }
+
+        if (userRow.role === "student") {
+          if (mounted) {
+            setProfile({
+              publicUserId: userRow.id,
+              id: userRow.id,
+              role: "student",
+              name: userRow.name,
+              email: userRow.email,
+            });
+          }
+          return;
+        }
 
         if (mounted) {
           setProfile({
-            id: teacherData?.id || sessionUser.id,
-            user_id: sessionUser.id,
-            role: "teacher",
-            name: sessionUser.email.split('@')[0], 
-            email: sessionUser.email,
-            is_active: true
+            publicUserId: userRow.id,
+            id: userRow.id,
+            role: userRow.role,
+            name: userRow.name,
+            email: userRow.email,
           });
         }
       } catch (err) {
@@ -90,11 +136,13 @@ export function AuthProvider({ children }) {
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      handleAuthState(session?.user || null);
+      handleAuthState(session?.user ?? null);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      handleAuthState(session?.user || null);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      handleAuthState(session?.user ?? null);
     });
 
     return () => {
@@ -103,13 +151,7 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const value = useMemo(() => ({ 
-    user, profile, loading, signOut 
-  }), [user, profile, loading]);
-  
-  return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
-    </AuthContext.Provider>
-  );
+  const value = useMemo(() => ({ user, profile, loading, signOut }), [user, profile, loading]);
+
+  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
 }

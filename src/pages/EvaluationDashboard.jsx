@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -13,138 +13,85 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Chip
+  Chip,
 } from "@mui/material";
-import { ArrowLeft, Eye, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft, Eye } from "lucide-react";
+import ExamReportView from "../components/ExamReportView";
+import { authFetch } from "../utils/authFetch";
 
 export default function EvaluationDashboard() {
   const navigate = useNavigate();
-  const [view, setView] = useState('list'); // 'list' or 'details'
+  const [view, setView] = useState("list");
   const [attempts, setAttempts] = useState([]);
-  const [selectedDetails, setSelectedDetails] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState(null);
+  const [listLoading, setListLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Common glass-morphism style from your template
   const glassCardStyle = {
     p: 4,
     bgcolor: "rgba(22, 31, 61, 0.6)",
     backdropFilter: "blur(20px)",
     borderRadius: "16px",
     border: "1px solid rgba(255,255,255,0.05)",
-    boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)"
+    boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
   };
 
-  useEffect(() => {
-    fetchMainPageData();
-  }, []);
-
-  const fetchMainPageData = async () => {
-    setLoading(true);
+  const fetchMainPageData = useCallback(async () => {
     setError("");
     try {
-      const response = await fetch('/api/teacher/evaluation');
-      
-      // Check if the response is actually JSON to prevent the "<!doctype" error
+      const response = await authFetch("/api/teacher/evaluation");
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Server returned HTML instead of JSON. Check your API route or React proxy settings.");
+        throw new Error("Server returned non-JSON. Check that the API is running and the Vite proxy is configured.");
       }
-
-      if (!response.ok) throw new Error('Failed to fetch attempts');
+      if (!response.ok) throw new Error("Failed to fetch attempts");
       const data = await response.json();
       setAttempts(data.attempts || []);
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setListLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchMainPageData();
+  }, [fetchMainPageData]);
+
+  useEffect(() => {
+    if (view !== "list") return undefined;
+    const id = setInterval(fetchMainPageData, 4000);
+    return () => clearInterval(id);
+  }, [view, fetchMainPageData]);
 
   const handleViewDetails = async (attemptId) => {
-    setLoading(true);
+    setDetailLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/teacher/evaluation/${attemptId}`);
-      
+      const response = await authFetch(`/api/teacher/evaluation/${attemptId}`);
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Server returned HTML instead of JSON.");
+        throw new Error("Server returned non-JSON.");
       }
-
-      if (!response.ok) throw new Error('Failed to fetch evaluation details');
+      if (!response.ok) throw new Error("Failed to fetch evaluation details");
       const data = await response.json();
-      setSelectedDetails(data);
-      setView('details');
+      setReport(data.report);
+      setView("details");
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setDetailLoading(false);
     }
   };
 
   const handleBackToList = () => {
-    setView('list');
-    setSelectedDetails(null);
+    setView("list");
+    setReport(null);
+    fetchMainPageData();
   };
 
-  // Helper function to render the A, B, C, D options in the dark theme
-  const renderOptions = (ans) => {
-    const options = [
-      { letter: 'A', text: ans.option_a },
-      { letter: 'B', text: ans.option_b },
-      { letter: 'C', text: ans.option_c },
-      { letter: 'D', text: ans.option_d }
-    ].filter(opt => opt.text);
-
-    const studentChoice = ans.student_answer?.toUpperCase();
-    const correctChoice = ans.expected_answer?.toUpperCase();
-
-    return (
-      <Box sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 1.5 }}>
-        {options.map((opt) => {
-          const isStudentChoice = opt.letter === studentChoice;
-          const isCorrectChoice = opt.letter === correctChoice;
-
-          let optionStyle = {
-            p: 2,
-            borderRadius: "12px",
-            border: "1px solid rgba(255,255,255,0.05)",
-            bgcolor: "rgba(0,0,0,0.2)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            color: "rgba(255,255,255,0.8)"
-          };
-
-          if (isCorrectChoice) {
-            optionStyle.bgcolor = "rgba(0, 221, 179, 0.1)"; // Using your brand cyan/green
-            optionStyle.border = "1px solid rgba(0, 221, 179, 0.4)";
-            optionStyle.color = "#00DDB3";
-          } else if (isStudentChoice && !isCorrectChoice) {
-            optionStyle.bgcolor = "rgba(244, 67, 54, 0.1)"; // Red for wrong
-            optionStyle.border = "1px solid rgba(244, 67, 54, 0.4)";
-            optionStyle.color = "#f44336";
-          }
-
-          return (
-            <Box key={opt.letter} sx={optionStyle}>
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <Typography sx={{ fontWeight: 800, width: "30px" }}>{opt.letter}.</Typography>
-                <Typography>{opt.text}</Typography>
-              </Box>
-              <Box sx={{ display: "flex", gap: 1 }}>
-                {isStudentChoice && <Chip label="Student Pick" size="small" sx={{ bgcolor: "rgba(255,255,255,0.1)", color: "#fff" }} />}
-                {isCorrectChoice && <Chip label="Correct Answer" size="small" sx={{ bgcolor: "#00DDB3", color: "#000", fontWeight: 700 }} />}
-              </Box>
-            </Box>
-          );
-        })}
-      </Box>
-    );
-  };
-
-  if (loading) {
+  if (listLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
         <CircularProgress sx={{ color: "#00DDB3" }} />
@@ -154,18 +101,24 @@ export default function EvaluationDashboard() {
 
   return (
     <Box sx={{ animation: "fadeIn 0.5s ease", pb: 10 }}>
-      {/* Header */}
       <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 4 }}>
         <Button
-          onClick={view === 'details' ? handleBackToList : () => navigate("/teacher/dashboard")}
+          onClick={view === "details" ? handleBackToList : () => navigate("/teacher/dashboard")}
           startIcon={<ArrowLeft size={20} />}
           sx={{ color: "#00DDB3", textTransform: "none", fontSize: "1rem" }}
         >
           Back
         </Button>
         <Typography variant="h3" sx={{ fontWeight: 800, color: "#fff" }}>
-          {view === 'list' ? 'Evaluation Dashboard' : 'Attempt Details'}
+          {view === "list" ? "Evaluation dashboard" : "Attempt report"}
         </Typography>
+        {view === "list" && (
+          <Chip
+            label="Live scores (refresh every 4s)"
+            size="small"
+            sx={{ ml: 1, bgcolor: "rgba(0,221,179,0.12)", color: "#00DDB3", fontWeight: 600 }}
+          />
+        )}
       </Box>
 
       {error && (
@@ -174,15 +127,17 @@ export default function EvaluationDashboard() {
         </Alert>
       )}
 
-      {/* VIEW 1: Main List */}
-      {view === 'list' && (
+      {view === "list" && (
         <Card sx={glassCardStyle}>
           <TableContainer>
             <Table>
               <TableHead>
                 <TableRow>
-                  {['Test Name', 'Student ID', 'Submitted At', 'AI Score', 'Action'].map((head) => (
-                    <TableCell key={head} sx={{ color: "rgba(255,255,255,0.5)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  {["Test", "Student", "Enrollment", "Status", "Score", "Result", "Action"].map((head) => (
+                    <TableCell
+                      key={head}
+                      sx={{ color: "rgba(255,255,255,0.5)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}
+                    >
                       {head}
                     </TableCell>
                   ))}
@@ -191,20 +146,49 @@ export default function EvaluationDashboard() {
               <TableBody>
                 {attempts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ color: "rgba(255,255,255,0.5)", py: 4, borderBottom: "none" }}>
+                    <TableCell colSpan={7} align="center" sx={{ color: "rgba(255,255,255,0.5)", py: 4, borderBottom: "none" }}>
                       No attempts found.
                     </TableCell>
                   </TableRow>
                 ) : (
                   attempts.map((attempt) => (
                     <TableRow key={attempt.attempt_id} sx={{ "&:hover": { bgcolor: "rgba(255,255,255,0.02)" } }}>
-                      <TableCell sx={{ color: "#fff", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>{attempt.test_name}</TableCell>
-                      <TableCell sx={{ color: "rgba(255,255,255,0.7)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>{attempt.enrollment_number}</TableCell>
+                      <TableCell sx={{ color: "#fff", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        {attempt.test_name}
+                      </TableCell>
+                      <TableCell sx={{ color: "rgba(255,255,255,0.85)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        {attempt.student_name}
+                      </TableCell>
                       <TableCell sx={{ color: "rgba(255,255,255,0.7)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                        {new Date(attempt.submitted_at).toLocaleString()}
+                        {attempt.enrollment_number}
+                      </TableCell>
+                      <TableCell sx={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        {attempt.in_progress ? (
+                          <Chip label="In progress" size="small" sx={{ bgcolor: "rgba(6,182,212,0.15)", color: "#67e8f9" }} />
+                        ) : (
+                          <Chip label="Submitted" size="small" sx={{ bgcolor: "rgba(0,221,179,0.12)", color: "#00DDB3" }} />
+                        )}
                       </TableCell>
                       <TableCell sx={{ color: "#00DDB3", fontWeight: 700, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                        {attempt.total_score}
+                        {attempt.total_score ?? "—"}
+                        {attempt.score_percent != null && (
+                          <Typography variant="caption" display="block" sx={{ color: "rgba(255,255,255,0.35)" }}>
+                            {Number(attempt.score_percent).toFixed(1)}%
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell sx={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        {attempt.passed === true && (
+                          <Chip label="Pass" size="small" sx={{ bgcolor: "rgba(34,197,94,0.2)", color: "#4ade80", fontWeight: 800 }} />
+                        )}
+                        {attempt.passed === false && (
+                          <Chip label="Fail" size="small" sx={{ bgcolor: "rgba(239,68,68,0.15)", color: "#f87171", fontWeight: 800 }} />
+                        )}
+                        {attempt.passed == null && (
+                          <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.35)" }}>
+                            —
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell sx={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                         <Button
@@ -215,7 +199,9 @@ export default function EvaluationDashboard() {
                             color: "#00DDB3",
                             textTransform: "none",
                             borderRadius: "8px",
-                            "&:hover": { background: "linear-gradient(135deg, rgba(0,221,179,0.2), rgba(6,182,212,0.2))" }
+                            "&:hover": {
+                              background: "linear-gradient(135deg, rgba(0,221,179,0.2), rgba(6,182,212,0.2))",
+                            },
                           }}
                         >
                           Review
@@ -230,64 +216,13 @@ export default function EvaluationDashboard() {
         </Card>
       )}
 
-      {/* VIEW 2: Drill Down */}
-      {view === 'details' && selectedDetails && (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          
-          {/* Summary Banner */}
-          <Card sx={{ ...glassCardStyle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Box>
-              <Typography variant="h5" sx={{ color: "#fff", fontWeight: 700, mb: 1 }}>
-                {selectedDetails.summary.test_name}
-              </Typography>
-              <Typography sx={{ color: "rgba(255,255,255,0.7)" }}>
-                Student ID: <span style={{ color: "#fff" }}>{selectedDetails.summary.enrollment_number}</span>
-              </Typography>
-              {selectedDetails.summary.violations > 0 && (
-                <Chip 
-                  label={`⚠️ ${selectedDetails.summary.violations} Proctoring Violations`} 
-                  color="error" 
-                  size="small" 
-                  sx={{ mt: 1 }} 
-                />
-              )}
-            </Box>
-            <Box sx={{ textAlign: "right" }}>
-              <Typography sx={{ color: "rgba(255,255,255,0.5)", fontSize: "0.875rem", textTransform: "uppercase" }}>
-                Total Score
-              </Typography>
-              <Typography sx={{ color: "#00DDB3", fontSize: "2.5rem", fontWeight: 900, lineHeight: 1 }}>
-                {selectedDetails.summary.total_score}
-              </Typography>
-            </Box>
-          </Card>
-
-          {/* Question List */}
-          <Typography variant="h5" sx={{ color: "#fff", fontWeight: 700, mt: 2 }}>Question Breakdown</Typography>
-          
-          {selectedDetails.evaluated_answers.map((ans, index) => (
-            <Card key={ans.answer_id} sx={{ ...glassCardStyle, p: 3 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 2 }}>
-                <Typography sx={{ color: "#fff", fontSize: "1.1rem", fontWeight: 500 }}>
-                  <span style={{ color: "rgba(255,255,255,0.5)", marginRight: "8px" }}>Q{index + 1}.</span>
-                  {ans.question_text}
-                </Typography>
-                <Chip 
-                  icon={ans.is_correct ? <CheckCircle size={16} /> : <XCircle size={16} />}
-                  label={`${ans.is_correct ? 'Correct' : 'Incorrect'} (${ans.marks_awarded} pts)`}
-                  sx={{ 
-                    bgcolor: ans.is_correct ? "rgba(0, 221, 179, 0.1)" : "rgba(244, 67, 54, 0.1)", 
-                    color: ans.is_correct ? "#00DDB3" : "#f44336",
-                    fontWeight: 600,
-                    border: `1px solid ${ans.is_correct ? "rgba(0, 221, 179, 0.3)" : "rgba(244, 67, 54, 0.3)"}`
-                  }}
-                />
-              </Box>
-              
-              {renderOptions(ans)}
-            </Card>
-          ))}
+      {view === "details" && detailLoading && (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+          <CircularProgress sx={{ color: "#00DDB3" }} />
         </Box>
+      )}
+      {view === "details" && !detailLoading && report && (
+        <ExamReportView report={report} glassCardStyle={glassCardStyle} />
       )}
     </Box>
   );

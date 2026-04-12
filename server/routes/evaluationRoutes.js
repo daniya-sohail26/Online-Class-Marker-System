@@ -1,187 +1,165 @@
 import express from 'express';
 import { supabase } from '../config/supabaseClient.js';
-import { authenticateToken } from '../middleware/auth.js';
-import TestEvaluator from '../services/TestEvaluator.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
+import { loadAttemptReportData, assembleReport } from '../services/attemptReportService.js';
+import { scoreAttemptById } from '../services/scoreAttemptService.js';
+
 const router = express.Router();
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(s) {
+  return typeof s === 'string' && UUID_RE.test(s);
+}
 
 /**
  * GET /api/teacher/evaluation
- * Fetch all test attempts for tests created by the logged-in teacher
+ * All attempts for tests created by this teacher — scores update as attempts are saved (poll or refresh).
  */
-router.get('/evaluation', authenticateToken, async (req, res) => {
-  const userId = req.user.id; // This MUST be a valid UUID string
+router.get('/evaluation', authenticateToken, requireRole('teacher'), async (req, res) => {
+  const userId = req.user.id;
 
   try {
-    // We fetch tests where the teacher is the creator
     const { data: attempts, error } = await supabase
       .from('attempts')
-      .select(`
+      .select(
+        `
         id,
         score,
+        score_percent,
+        passed,
         violations,
         submitted_at,
-        tests!inner(
+        started_at,
+        student_id,
+        tests!inner (
           id,
+          name,
+          course_id,
           created_by,
-          templates(name)
-        ),
-        students(enrollment_number)
-      `)
-      .eq('tests.created_by', userId) // Filter attempts via the joined tests table
-      .order('submitted_at', { ascending: false });
+          total_marks,
+          templates (name)
+        )
+      `
+      )
+      .eq('tests.created_by', userId)
+      .order('started_at', { ascending: false });
 
     if (error) {
       console.error('Supabase Error:', error);
       return res.status(400).json({ error: error.message });
     }
 
-    // Map the nested data to the flat format your React component expects
-    const formatted = attempts.map(att => ({
-      attempt_id: att.id,
-      test_name: att.tests?.templates?.name || 'Untitled Test',
-      enrollment_number: att.students?.enrollment_number || 'N/A',
-      total_score: att.score,
-      submitted_at: att.submitted_at,
-      violations: att.violations
-    }));
+    const list = attempts || [];
+    const userIds = [...new Set(list.map((a) => a.student_id).filter(Boolean))];
+    const courseIds = [...new Set(list.map((a) => a.tests?.course_id).filter(Boolean))];
+
+    let userMap = {};
+    if (userIds.length) {
+      const { data: users } = await supabase.from('users').select('id, name, email').in('id', userIds);
+      userMap = Object.fromEntries((users || []).map((u) => [u.id, u]));
+    }
+
+    let enrollMap = {};
+    if (courseIds.length && userIds.length) {
+      const { data: studs } = await supabase
+        .from('students')
+        .select('user_id, course_id, enrollment_number')
+        .in('course_id', courseIds)
+        .in('user_id', userIds);
+      enrollMap = Object.fromEntries(
+        (studs || []).map((s) => [`${s.user_id}|${s.course_id}`, s.enrollment_number])
+      );
+    }
+
+    const formatted = list.map((att) => {
+      const t = Array.isArray(att.tests) ? att.tests[0] : att.tests;
+      const cid = t?.course_id;
+      const su = userMap[att.student_id];
+      const en = cid ? enrollMap[`${att.student_id}|${cid}`] : null;
+      return {
+        attempt_id: att.id,
+        test_name: t?.name || t?.templates?.name || 'Untitled Test',
+        student_name: su?.name || 'Student',
+        enrollment_number: en ?? '—',
+        total_score: att.score,
+        score_percent: att.score_percent,
+        passed: att.passed,
+        submitted_at: att.submitted_at,
+        started_at: att.started_at,
+        violations: att.violations,
+        in_progress: !att.submitted_at,
+      };
+    });
 
     res.json({ attempts: formatted });
-
   } catch (err) {
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
 /**
  * GET /api/teacher/evaluation/:attemptId
- * Fetch specific attempt details and all associated evaluated answers
+ * Full report for drill-down (same prototype shape as student report, audience=teacher).
  */
-router.get('/evaluation/:attemptId', authenticateToken, async (req, res) => {
+router.get('/evaluation/:attemptId', authenticateToken, requireRole('teacher'), async (req, res) => {
   const { attemptId } = req.params;
+  const userId = req.user.id;
+
+  if (!isUuid(attemptId)) {
+    return res.status(400).json({ error: 'attemptId must be a valid UUID' });
+  }
 
   try {
-    // Query 1: Get Attempt Summary and join Test/Template and Student data
-    const { data: attemptData, error: attemptError } = await supabase
-      .from('attempts')
-      .select(`
-        id,
-        test_id,
-        score,
-        submitted_at,
-        violations,
-        tests!inner(
-          template_id,
-          templates(name)
-        ),
-        students!inner(
-          enrollment_number
-        )
-      `)
-      .eq('id', attemptId)
-      .single();
-
-    if (attemptError) {
-      if (attemptError.code === 'PGRST116') { // Supabase "Row not found" error
-        return res.status(404).json({ error: 'Attempt not found' });
-      }
-      throw attemptError;
+    const rows = await loadAttemptReportData(supabase, attemptId);
+    if (rows.test?.created_by !== userId) {
+      return res.status(403).json({ error: 'Not allowed to view this attempt' });
     }
-
-    // Query 2: Get Answers and join Question data
-    const { data: answersData, error: answersError } = await supabase
-      .from('answers')
-      .select(`
-        id,
-        question_id,
-        selected_option,
-        is_correct,
-        marks_awarded,
-        answered_at,
-        questions!inner(
-          question_text,
-          option_a,
-          option_b,
-          option_c,
-          option_d,
-          correct_option
-        )
-      `)
-      .eq('attempt_id', attemptId)
-      .order('answered_at', { ascending: true });
-
-    if (answersError) throw answersError;
-
-    // Format the response to match what the React frontend expects
-    const summary = {
-      attempt_id: attemptData.id,
-      test_name: attemptData.tests?.templates?.name || 'Unknown Test',
-      enrollment_number: attemptData.students?.enrollment_number || 'Unknown',
-      total_score: attemptData.score,
-      submitted_at: attemptData.submitted_at,
-      violations: attemptData.violations
-    };
-
-    const evaluated_answers = answersData.map(ans => ({
-      answer_id: ans.id,
-      question_id: ans.question_id,
-      question_text: ans.questions?.question_text,
-      option_a: ans.questions?.option_a,
-      option_b: ans.questions?.option_b,
-      option_c: ans.questions?.option_c,
-      option_d: ans.questions?.option_d,
-      expected_answer: ans.questions?.correct_option,
-      student_answer: ans.selected_option,
-      is_correct: ans.is_correct,
-      marks_awarded: ans.marks_awarded,
-      answered_at: ans.answered_at
-    }));
-
-    res.json({
-      summary,
-      evaluated_answers
-    });
-
+    const report = assembleReport('teacher', rows);
+    res.json({ report });
   } catch (error) {
+    if (error?.code === 'PGRST116') {
+      return res.status(404).json({ error: 'Attempt not found' });
+    }
     console.error('Fetch attempt details error:', error);
     res.status(500).json({ error: error.message });
   }
 });
-router.post('/evaluate-attempt', authenticateToken, async (req, res) => {
-    const { attemptId } = req.body;
 
-    try {
-        // 1. Fetch Attempt, Template, and Answers
-        const { data: attempt, error: attErr } = await supabase
-            .from('attempts')
-            .select('*, tests(template_id, templates(*))')
-            .eq('id', attemptId)
-            .single();
+router.post('/evaluate-attempt', authenticateToken, requireRole('teacher'), async (req, res) => {
+  const { attemptId } = req.body;
 
-        const { data: answers, error: ansErr } = await supabase
-            .from('answers')
-            .select('*, questions(correct_option)')
-            .eq('attempt_id', attemptId);
+  try {
+    const { data: attempt, error: attErr } = await supabase
+      .from('attempts')
+      .select('id, tests(created_by)')
+      .eq('id', attemptId)
+      .single();
 
-        if (attErr || ansErr) throw new Error("Data fetching failed");
+    if (attErr) throw attErr;
 
-        const templateConfig = attempt.tests.templates;
-
-        // 2. Use Strategy Pattern
-        TestEvaluator.setStrategyByTemplate(templateConfig);
-        const { totalScore, evaluatedAnswers } = TestEvaluator.evaluate(answers, templateConfig);
-
-        // 3. Update DB with results
-        await supabase.from('attempts').update({ score: totalScore }).eq('id', attemptId);
-        
-        for (const ans of evaluatedAnswers) {
-            await supabase.from('answers')
-                .update({ is_correct: ans.is_correct, marks_awarded: ans.marks_awarded })
-                .eq('id', ans.id);
-        }
-
-        res.json({ success: true, score: totalScore });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    const testRow = Array.isArray(attempt.tests) ? attempt.tests[0] : attempt.tests;
+    if (testRow?.created_by !== req.user.id) {
+      return res.status(403).json({ error: 'You can only evaluate attempts for your own tests' });
     }
+
+    const result = await scoreAttemptById(supabase, attemptId);
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      score: result.totalScore,
+      answersUpdated: result.evaluatedCount,
+      passed: result.passed,
+      scorePercent: result.scorePercent,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
+
 export default router;

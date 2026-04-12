@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { supabase } from '../../server/config/supabaseClient';
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
@@ -7,11 +8,12 @@ const apiClient = axios.create({
   }
 });
 
-// Add auth token to requests
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('authToken');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+apiClient.interceptors.request.use(async (config) => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    config.headers.Authorization = `Bearer ${session.access_token}`;
   }
   return config;
 });
@@ -36,8 +38,7 @@ apiClient.interceptors.response.use(
 
     // Handle specific status codes
     if (status === 401) {
-      localStorage.removeItem('authToken');
-      window.location.href = '/';
+      window.location.href = '/login';
     } else if (status === 403) {
       errorObj.message = 'You do not have permission to perform this action';
     } else if (status === 404) {

@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { TestCreationService } from '../services/TestCreationService.js';
 import { supabase } from '../config/supabaseClient.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 const testService = new TestCreationService();
@@ -62,7 +63,7 @@ router.post('/template/custom', (req, res) => {
  * POST /api/tests
  * Create a new test and persist to Supabase
  */
-router.post('/', async (req, res) => {
+router.post('/', authenticateToken, requireRole('teacher'), async (req, res) => {
   try {
     const {
       name,
@@ -78,7 +79,6 @@ router.post('/', async (req, res) => {
       end_time,
       isPublished,
       is_published,
-      createdBy
     } = req.body;
 
     const normalizedData = {
@@ -90,7 +90,7 @@ router.post('/', async (req, res) => {
       total_marks: 0,
       // Default to true if not provided as per user requirements
       is_published: isPublished !== undefined ? isPublished : (is_published !== undefined ? is_published : true),
-      created_by: createdBy || 'teacher-123',
+      created_by: req.user.id,
       created_at: new Date().toISOString()
     };
 

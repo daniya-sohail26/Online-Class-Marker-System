@@ -1,0 +1,5 @@
+# https://supabase.com/docs/guides/cli/config
+
+[functions.score-attempt]
+verify_jwt = false
+# Function validates Bearer token manually (needs service role for writes).

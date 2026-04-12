@@ -1,13 +1,71 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
 /**
- * Mock Auth Middleware
- * Since login is removed, this middleware always passes a default user
+ * Verifies the Supabase access token and loads `public.users` (authoritative app profile).
+ * Requires SUPABASE_SERVICE_ROLE_KEY on the server (never expose this to the client).
  */
-export const authenticateToken = (req, res, next) => {
-    // Mock user for teacher dashboard
-    req.user = {
-        id: 'teacher-123', // This shouldIdeally match some user in the DB
-        role: 'teacher',
-        email: 'teacher@example.com'
-    };
+export async function authenticateToken(req, res, next) {
+  if (!supabaseUrl || !serviceKey) {
+    return res.status(503).json({
+      error: 'Server auth is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in server/.env',
+    });
+  }
+
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Authorization required: Bearer <access_token>' });
+  }
+
+  const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const {
+    data: { user: authUser },
+    error: authErr,
+  } = await supabaseAdmin.auth.getUser(token);
+
+  if (authErr || !authUser) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  const { data: profile, error: profErr } = await supabaseAdmin
+    .from('users')
+    .select('id, role, name, email')
+    .eq('auth_id', authUser.id)
+    .maybeSingle();
+
+  if (profErr) {
+    console.error('Profile load error:', profErr);
+    return res.status(500).json({ error: 'Could not load user profile' });
+  }
+
+  if (!profile) {
+    return res.status(403).json({
+      error: 'No application profile found. Ask an admin to create your users row for this login.',
+    });
+  }
+
+  req.user = {
+    id: profile.id,
+    authId: authUser.id,
+    role: profile.role,
+    email: profile.email,
+    name: profile.name,
+  };
+  next();
+}
+
+export function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
     next();
-};
+  };
+}
