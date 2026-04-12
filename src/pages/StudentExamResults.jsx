@@ -6,6 +6,9 @@ import ExamReportView from "../components/ExamReportView";
 import { authFetch } from "../utils/authFetch";
 import { useAuth } from "../contexts/AuthContext";
 
+const ATTEMPT_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Student-facing results: same report prototype as the teacher view, filled with their attempt only.
  */
@@ -19,6 +22,13 @@ export default function StudentExamResults() {
 
   useEffect(() => {
     if (!user || !attemptId) {
+      setLoading(false);
+      return;
+    }
+    if (!ATTEMPT_UUID_RE.test(attemptId)) {
+      setError(
+        "Invalid results link: use your attempt ID (UUID from the database or your post-submit link), not the exam name.",
+      );
       setLoading(false);
       return;
     }

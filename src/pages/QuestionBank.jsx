@@ -658,7 +658,7 @@ export default function QuestionBank() {
                       <Button variant="outlined" size="small" disabled={isLoadingExam} onClick={() => handleViewExamDetails(exam)} sx={{ borderColor: "rgba(0, 221, 179, 0.3)", color: "#00DDB3", textTransform: "none", borderRadius: "8px", fontWeight: 700 }}>
                         View Exam Details
                       </Button>
-                      <Button variant="outlined" size="small" onClick={() => navigate(`/exam-results/${exam.title.replace(/\s+/g, '-').toLowerCase()}`)} sx={{ borderColor: "rgba(255,255,255,0.15)", color: "#fff", textTransform: "none", borderRadius: "8px" }}>
+                      <Button variant="outlined" size="small" onClick={() => navigate("/evaluation")} sx={{ borderColor: "rgba(255,255,255,0.15)", color: "#fff", textTransform: "none", borderRadius: "8px" }}>
                         View Student Results
                       </Button>
                     </Stack>

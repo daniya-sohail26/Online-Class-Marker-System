@@ -55,6 +55,31 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const upload = multer({ storage: multer.memoryStorage() });
 
+/** Map Gemini / config errors to proper HTTP status instead of always 500. */
+function mapGenerateQuestionsError(error) {
+    const msg = error?.message || String(error);
+    const status = error?.status ?? error?.statusCode;
+    const lower = msg.toLowerCase();
+    if (
+        status === 403 ||
+        lower.includes('leaked') ||
+        lower.includes('permission_denied') ||
+        lower.includes('api key not valid')
+    ) {
+        return {
+            http: 403,
+            error:
+                'Gemini API key was rejected or revoked. Create a new key in Google AI Studio, set GEMINI_API_KEY in server/.env, restart the server, and never commit the key.',
+        };
+    }
+    if (status === 429 || lower.includes('resource_exhausted') || lower.includes('quota')) {
+        return { http: 429, error: 'Gemini rate limit or quota exceeded. Try again later.' };
+    }
+    if (lower.includes('gemini_api_key') || msg.includes('GEMINI_API_KEY')) {
+        return { http: 503, error: msg };
+    }
+    return { http: 500, error: msg || 'Failed to generate questions.' };
+}
 
 // --- FACTORY-POWERED ENDPOINT ---
 app.post('/api/generate-questions', upload.array('files'), async (req, res) => {
@@ -75,7 +100,8 @@ app.post('/api/generate-questions', upload.array('files'), async (req, res) => {
 
     } catch (error) {
         console.error("\n>>> BACKEND CRASH ERROR:", error);
-        res.status(500).json({ error: error.message || "Failed to generate questions." });
+        const { http, error: message } = mapGenerateQuestionsError(error);
+        res.status(http).json({ error: message });
     }
 });
 
