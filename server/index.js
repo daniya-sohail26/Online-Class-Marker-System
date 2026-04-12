@@ -15,6 +15,7 @@ import courseRoutes from './routes/courseRoutes.js';
 import templateRoutes from './routes/templates.js'; 
 import questionRoutes from './routes/questionRoutes.js';
 import evaluationRoutes from './routes/evaluationRoutes.js'; // New route for evaluation endpoints 
+import studentRoutes from './routes/studentRoutes.js'; // Student routes 
 
 // Environment Setup
 const __filename = fileURLToPath(import.meta.url);
@@ -34,6 +35,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/teacher', evaluationRoutes); // Reuse questionRoutes for evaluation endpoints
+app.use('/api/students', studentRoutes); // Student endpoints
 
 // --- Initialize Supabase ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;

@@ -53,7 +53,10 @@ export default function Login() {
 
   useEffect(() => {
     if (profile) {
-      const from = location.state?.from?.pathname || (profile.role === "admin" ? "/admin/dashboard" : "/teacher/dashboard");
+      let defaultPath = "/teacher/dashboard";
+      if (profile.role === "admin") defaultPath = "/admin/dashboard";
+      if (profile.role === "student") defaultPath = "/student/dashboard";
+      const from = location.state?.from?.pathname || defaultPath;
       navigate(from, { replace: true });
     }
   }, [profile, navigate, location]);
@@ -125,6 +128,7 @@ export default function Login() {
               sx={{ mb: 4, bgcolor: "rgba(0,0,0,0.4)", p: 0.5, borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)", "& .MuiToggleButton-root": { border: "none", borderRadius: "12px", color: "rgba(255,255,255,0.5)", textTransform: "none", fontWeight: 600, py: 1.5 } }}
             >
               <ToggleButton value="teacher" sx={{ "&.Mui-selected": { bgcolor: "#00DDB3", color: "#000", fontWeight: 800, "&:hover": { bgcolor: "#00DDB3" } } }}>Teacher</ToggleButton>
+              <ToggleButton value="student" sx={{ "&.Mui-selected": { bgcolor: "#A855F7", color: "#000", fontWeight: 800, "&:hover": { bgcolor: "#A855F7" } } }}>Student</ToggleButton>
               <ToggleButton value="admin" sx={{ "&.Mui-selected": { bgcolor: "#06B6D4", color: "#000", fontWeight: 800, "&:hover": { bgcolor: "#06B6D4" } } }}>Admin</ToggleButton>
             </ToggleButtonGroup>
 

@@ -54,6 +54,7 @@ apiClient.interceptors.response.use(
   }
 );
 
+
 // Add request timeout
 apiClient.defaults.timeout = 30000; // 30 seconds
 

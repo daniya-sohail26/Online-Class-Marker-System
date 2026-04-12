@@ -7,11 +7,12 @@ import {
 import { ThemeProvider, Box, CssBaseline, GlobalStyles } from "@mui/material";
 import theme from "./theme";
 import { AuthProvider } from "./contexts/AuthContext";
-import { AdminRoute, TeacherRoute } from "./components/ProtectedRoute";
+import { AdminRoute, TeacherRoute, StudentRoute } from "./components/ProtectedRoute";
 
 // Components
 import Sidebar from "./components/Sidebar";
 import AdminSidebar from "./components/AdminSidebar";
+import StudentSidebar from "./components/StudentSidebar";
 
 // Pages
 import Dashboard from "./pages/Dashboard";
@@ -31,6 +32,9 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminBulkUpload from "./pages/admin/AdminBulkUpload";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
 import TeacherEvaluationPanel from "./pages/EvaluationDashboard";
+import StudentDashboard from "./pages/StudentDashboard";
+import StudentResults from "./pages/StudentResults";
+import ResultsPage from "./pages/ResultsPage";
 function App() {
   return (
     <ThemeProvider theme={theme}>
@@ -142,6 +146,36 @@ function App() {
                     </Box>
                   </Box>
                 </AdminRoute>
+              }
+            />
+
+            {/* Protected Student Routes */}
+            <Route
+              path="/student/*"
+              element={
+                <StudentRoute>
+                  <Box sx={{ display: "flex", minHeight: "100vh" }}>
+                    <StudentSidebar />
+                    <Box
+                      component="main"
+                      sx={{
+                        flex: 1,
+                        minWidth: 0,        // ← prevents flex overflow
+                        p: 3,
+                        // NO overflowY: "auto" — let the PAGE scroll, not this box
+                        // NO minHeight: "100vh" — not needed, flex handles it
+                      }}
+                    >
+                      <Routes>
+                        <Route path="dashboard" element={<StudentDashboard />} />
+
+                        <Route path="results" element={<StudentResults />} />
+                        <Route path="results/:attemptId" element={<ResultsPage />} />
+                        <Route path="" element={<Navigate to="dashboard" replace />} />
+                      </Routes>
+                    </Box>
+                  </Box>
+                </StudentRoute>
               }
             />
           </Routes>

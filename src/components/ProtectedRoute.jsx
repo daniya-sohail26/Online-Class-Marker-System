@@ -56,3 +56,30 @@ export function TeacherRoute({ children }) {
 
   return children;
 }
+
+/**
+ * Protects student routes: requires auth + profile.role === "student"
+ */
+export function StudentRoute({ children }) {
+  const { user, profile, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", gap: 2 }}>
+        <CircularProgress />
+        <Typography color="text.secondary">Loading...</Typography>
+      </Box>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (profile?.role !== "student") {
+    return <Navigate to={profile?.role === "teacher" ? "/teacher/dashboard" : profile?.role === "admin" ? "/admin/dashboard" : "/login"} replace />;
+  }
+
+  return children;
+}

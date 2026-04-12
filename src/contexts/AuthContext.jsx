@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
 import { supabase } from "../../server/config/supabaseClient";
 
-const AuthContext = createContext({ 
-  user: null, 
-  profile: null, 
-  loading: true, 
-  signOut: async () => {} 
+const AuthContext = createContext({
+  user: null,
+  profile: null,
+  loading: true,
+  signOut: async () => {},
 });
 
 export function useAuth() {
@@ -15,7 +15,7 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser]       = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,7 +26,7 @@ export function AuthProvider({ children }) {
       sessionStorage.clear();
       setUser(null);
       setProfile(null);
-      window.location.replace("/login"); 
+      window.location.replace("/login");
     } catch (err) {
       console.error("Signout Error:", err);
       window.location.href = "/login";
@@ -38,75 +38,127 @@ export function AuthProvider({ children }) {
 
     const handleAuthState = async (sessionUser) => {
       if (!sessionUser) {
-        if (mounted) {
-          setUser(null);
-          setProfile(null);
-          setLoading(false);
-        }
+        if (mounted) { setUser(null); setProfile(null); setLoading(false); }
         return;
       }
 
       try {
         if (mounted) setUser(sessionUser);
 
-        // 🌟 THE FIX: Read the exact role they clicked on the Login screen!
         const intendedRole = localStorage.getItem("portal_role") || "teacher";
 
+        // ── Step 1: Always fetch the users row via auth_id ──────────────────
+        // auth.users.id → users.auth_id → users.id
+        const { data: userRow, error: userErr } = await supabase
+          .from("users")
+          .select("id, name, email, role, is_active")
+          .eq("auth_id", sessionUser.id)   // auth.users.id matches users.auth_id
+          .maybeSingle();
+
+        if (userErr) {
+          console.error("[AuthContext] users lookup failed:", userErr.message);
+        }
+
+        const resolvedName  = userRow?.name  ?? sessionUser.email.split("@")[0];
+        const resolvedEmail = userRow?.email ?? sessionUser.email;
+        const usersId       = userRow?.id;   // users.id — needed for student/teacher lookup
+
+        // ── Admin ────────────────────────────────────────────────────────────
         if (intendedRole === "admin") {
           if (mounted) {
             setProfile({
-              id: sessionUser.user_id,
-              role: "admin", // This forces the router to let you into the Admin dashboard
-              name: "Admin User",
-              email: sessionUser.email,
-              is_active: true
+              id:        usersId ?? sessionUser.id,
+              user_id:   sessionUser.id,
+              role:      "admin",
+              name:      resolvedName,
+              email:     resolvedEmail,
+              is_active: userRow?.is_active ?? true,
             });
           }
           return;
         }
 
-        // Normal Teacher Flow
-        const { data: teacherData } = await supabase
+        // ── Student ──────────────────────────────────────────────────────────
+        if (intendedRole === "student") {
+          // students.user_id = users.id  (NOT auth.users.id)
+          const { data: studentRow, error: studentErr } = await supabase
+            .from("students")
+            .select("id, enrollment_number, course_id")
+            .eq("user_id", usersId)          // users.id ← correct FK
+            .maybeSingle();
+
+          if (studentErr) {
+            console.error("[AuthContext] students lookup failed:", studentErr.message);
+          }
+
+          if (mounted) {
+            setProfile({
+              // users table
+              id:                usersId ?? sessionUser.id,
+              user_id:           usersId ?? sessionUser.id,   // used in attempts.student_id
+              role:              "student",
+              name:              resolvedName,
+              email:             resolvedEmail,
+              is_active:         userRow?.is_active ?? true,
+              // students table
+              student_record_id: studentRow?.id,              // students.id (if needed)
+              enrollment_number: studentRow?.enrollment_number ?? "",
+              course_id:         studentRow?.course_id ?? "",
+            });
+          }
+          return;
+        }
+
+        // ── Teacher ──────────────────────────────────────────────────────────
+        const { data: teacherRow, error: teacherErr } = await supabase
           .from("teachers")
-          .select("*")
-          .eq("user_id", sessionUser.id)
+          .select("id, course_id")
+          .eq("user_id", usersId)            // users.id ← correct FK
           .maybeSingle();
+
+        if (teacherErr) {
+          console.error("[AuthContext] teachers lookup failed:", teacherErr.message);
+        }
 
         if (mounted) {
           setProfile({
-            id: teacherData?.id || sessionUser.id,
-            user_id: sessionUser.id,
-            role: "teacher",
-            name: sessionUser.email.split('@')[0], 
-            email: sessionUser.email,
-            is_active: true
+            id:        usersId ?? sessionUser.id,
+            user_id:   usersId ?? sessionUser.id,
+            role:      "teacher",
+            name:      resolvedName,
+            email:     resolvedEmail,
+            is_active: userRow?.is_active ?? true,
+            course_id: teacherRow?.course_id ?? "",
           });
         }
       } catch (err) {
-        console.error("AuthContext Profile Error:", err);
+        console.error("[AuthContext] profile build error:", err);
       } finally {
         if (mounted) setLoading(false);
       }
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      handleAuthState(session?.user || null);
+      handleAuthState(session?.user ?? null);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      handleAuthState(session?.user || null);
-    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        handleAuthState(session?.user ?? null);
+      }
+    );
 
     return () => {
       mounted = false;
-      if (subscription) subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, []);
 
-  const value = useMemo(() => ({ 
-    user, profile, loading, signOut 
-  }), [user, profile, loading]);
-  
+  const value = useMemo(
+    () => ({ user, profile, loading, signOut }),
+    [user, profile, loading]
+  );
+
   return (
     <AuthContext.Provider value={value}>
       {!loading && children}
