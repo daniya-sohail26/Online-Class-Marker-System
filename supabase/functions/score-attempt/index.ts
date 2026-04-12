@@ -37,6 +37,19 @@ function computePassResult(
   return { scorePercent, passed, maxMarks };
 }
 
+function sortAnswersForNegative(
+  answers: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  return [...answers].sort((a, b) => {
+    const ta = a.answered_at ? new Date(String(a.answered_at)).getTime() : 0;
+    const tb = b.answered_at ? new Date(String(b.answered_at)).getTime() : 0;
+    if (ta !== tb) return ta - tb;
+    const qa = String(a.question_id ?? "");
+    const qb = String(b.question_id ?? "");
+    return qa.localeCompare(qb);
+  });
+}
+
 function evaluateAnswers(
   answers: Array<Record<string, unknown>>,
   templateConfig: Record<string, unknown>,
@@ -44,20 +57,30 @@ function evaluateAnswers(
 ): { totalScore: number; evaluated: Array<{ id: string; is_correct: boolean; marks_awarded: number }> } {
   const neg = !!templateConfig.negative_marking_enabled;
   const penalty = Number(templateConfig.negative_marking_penalty || 0);
+  const wrongThreshold = Math.max(
+    1,
+    Math.floor(Number(templateConfig.negative_marking_wrong_threshold ?? 3)) || 3,
+  );
   const defaultMarks = Number(templateConfig.marks_per_question || 1);
   let totalScore = 0;
   const evaluated: Array<{ id: string; is_correct: boolean; marks_awarded: number }> = [];
 
-  for (const ans of answers) {
+  const list = neg ? sortAnswersForNegative(answers) : answers;
+  let wrongOrdinal = 0;
+
+  for (const ans of list) {
     const q = ans.questions as { correct_option?: string } | undefined;
-    const correct = normLetter(ans.selected_option as string) != null &&
+    const attempted = ans.selected_option != null && String(ans.selected_option).trim() !== "";
+    const correct = attempted &&
       normLetter(ans.selected_option as string) === normLetter(q?.correct_option);
-    const marksAvail = marksByQ[ans.question_id as string] ?? defaultMarks;
+    const marksAvail = Number(marksByQ[ans.question_id as string] ?? defaultMarks);
     let marks_awarded = 0;
     if (neg) {
       if (correct) marks_awarded = marksAvail;
-      else if (ans.selected_option != null && String(ans.selected_option).trim() !== "") {
-        marks_awarded = -Math.abs(penalty);
+      else if (!attempted) marks_awarded = -Math.abs(penalty);
+      else {
+        wrongOrdinal += 1;
+        marks_awarded = wrongOrdinal >= wrongThreshold ? -Math.abs(penalty) : 0;
       }
     } else {
       marks_awarded = correct ? marksAvail : 0;
@@ -157,7 +180,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: answers, error: ansErr } = await admin
       .from("answers")
-      .select("id, question_id, selected_option, questions(correct_option)")
+      .select("id, question_id, selected_option, answered_at, questions(correct_option)")
       .eq("attempt_id", attemptId);
 
     if (ansErr) {

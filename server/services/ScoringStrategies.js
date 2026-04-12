@@ -58,16 +58,41 @@ export function buildSectionMarksMap(answers, templateConfig) {
   return Object.keys(map).length ? map : null;
 }
 
+function sortAnswersForNegativeMarking(answers) {
+  return [...(answers || [])].sort((a, b) => {
+    const ta = a.answered_at ? new Date(a.answered_at).getTime() : 0;
+    const tb = b.answered_at ? new Date(b.answered_at).getTime() : 0;
+    if (ta !== tb) return ta - tb;
+    const qa = String(a.question_id || '');
+    const qb = String(b.question_id || '');
+    return qa.localeCompare(qb);
+  });
+}
+
 /**
  * Core MCQ evaluation: optional per-question marks (section map), optional negative penalty.
+ *
+ * When `negative` is true (`negative_marking_enabled`):
+ * - Unattempted (no option selected): always `-negative_marking_penalty`.
+ * - Wrong answers: first `(wrong_threshold - 1)` wrongs score 0; from the `wrong_threshold`-th wrong onward,
+ *   each wrong scores `-negative_marking_penalty`. Default `wrong_threshold` is 3 (template: `negative_marking_wrong_threshold`).
  */
 export function computeEvaluatedAnswers(answers, templateConfig, sectionMarksMap, negative) {
   const penalty = Number(templateConfig?.negative_marking_penalty ?? 0);
+  const wrongThreshold = Math.max(
+    1,
+    Math.floor(Number(templateConfig?.negative_marking_wrong_threshold ?? 3)) || 3,
+  );
   let totalScore = 0;
 
-  const evaluatedAnswers = (answers || []).map((ans) => {
+  const list = negative ? sortAnswersForNegativeMarking(answers) : answers || [];
+  let wrongOrdinal = 0;
+
+  const evaluatedAnswers = list.map((ans) => {
+    const attempted =
+      ans.selected_option != null && String(ans.selected_option).trim() !== '';
     const correct =
-      normLetter(ans.selected_option) != null &&
+      attempted &&
       normLetter(ans.selected_option) === normLetter(ans.questions?.correct_option);
 
     let marksAvailable = sectionMarksMap?.[ans.question_id];
@@ -80,8 +105,11 @@ export function computeEvaluatedAnswers(answers, templateConfig, sectionMarksMap
     if (negative) {
       if (correct) {
         marksAwarded = marksAvailable;
-      } else if (ans.selected_option != null && String(ans.selected_option).trim() !== '') {
+      } else if (!attempted) {
         marksAwarded = -Math.abs(penalty);
+      } else {
+        wrongOrdinal += 1;
+        marksAwarded = wrongOrdinal >= wrongThreshold ? -Math.abs(penalty) : 0;
       }
     } else {
       marksAwarded = correct ? marksAvailable : 0;
@@ -111,7 +139,10 @@ export class StandardScoringStrategy extends ScoringStrategy {
   }
 }
 
-/** Correct → full marks; wrong non-empty selection → custom penalty (template.negative_marking_penalty). */
+/**
+ * Correct → full marks; unattempted → penalty; wrong answers → penalty only from Nth wrong onward (default N=3).
+ * See `computeEvaluatedAnswers`.
+ */
 export class NegativeMarkingStrategy extends ScoringStrategy {
   calculate(answers, templateConfig) {
     return computeEvaluatedAnswers(answers, templateConfig, null, true);
