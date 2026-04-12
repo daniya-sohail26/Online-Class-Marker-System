@@ -1,13 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-
 /**
  * Verifies the Supabase access token and loads `public.users` (authoritative app profile).
  * Requires SUPABASE_SERVICE_ROLE_KEY on the server (never expose this to the client).
+ *
+ * Reads env inside the handler so values from server/.env are visible after index.js runs
+ * dotenv.config (route modules load before those lines run).
  */
 export async function authenticateToken(req, res, next) {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
   if (!supabaseUrl || !serviceKey) {
     return res.status(503).json({
       error: 'Server auth is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in server/.env',

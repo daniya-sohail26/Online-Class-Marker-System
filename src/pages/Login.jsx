@@ -52,11 +52,29 @@ export default function Login() {
   const successMessage = location.state?.message || "";
 
   useEffect(() => {
-    if (profile) {
-      const from = location.state?.from?.pathname || (profile.role === "admin" ? "/admin/dashboard" : "/teacher/dashboard");
-      navigate(from, { replace: true });
+    if (!profile || location.pathname !== "/login") return;
+
+    const fromPath = location.state?.from?.pathname;
+    const role = profile.role;
+
+    if (role === "admin") {
+      const target =
+        fromPath && fromPath.startsWith("/admin")
+          ? fromPath
+          : "/admin/dashboard";
+      navigate(target, { replace: true });
+      return;
     }
-  }, [profile, navigate, location]);
+    if (role === "teacher") {
+      const target =
+        fromPath && fromPath.startsWith("/teacher")
+          ? fromPath
+          : "/teacher/dashboard";
+      navigate(target, { replace: true });
+      return;
+    }
+    // student / unknown: stay on /login (navbar "Login", sign out, switch account) — no redirect to /
+  }, [profile?.id, profile?.role, navigate, location.pathname, location.state?.from?.pathname]);
 
   const handleLogin = async (e) => {
     e.preventDefault(); 
@@ -75,23 +93,22 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // 🌟 THE FIX: Save the exact button the user clicked so AuthContext knows what to do!
-      localStorage.setItem("portal_role", role); 
+      localStorage.setItem("portal_role", role);
 
-      const { error: authError } = await supabase.auth.signInWithPassword({ 
-        email: email.trim(), 
-        password 
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
       });
 
       if (authError) throw authError;
-
     } catch (err) {
       console.error("Login Error:", err);
       let message = err.message;
       if (message.includes("Invalid login credentials")) message = "Incorrect email or password.";
       setError(message);
-      setLoading(false); 
-    } 
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
