@@ -16,11 +16,16 @@ import templateRoutes from './routes/templates.js';
 import questionRoutes from './routes/questionRoutes.js';
 import evaluationRoutes from './routes/evaluationRoutes.js'; // New route for evaluation endpoints 
 import studentRoutes from './routes/studentRoutes.js'; // Student routes 
+import evaluationRoutes from './routes/evaluationRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
+import testsRoutes from './routes/tests.js';
+import attemptRoutes from './routes/attemptRoutes.js';
 
 // Environment Setup
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.join(__dirname, '.env') }); 
+dotenv.config({ path: path.join(__dirname, '../.env') });
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 app.use(cors());
@@ -36,6 +41,10 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/teacher', evaluationRoutes); // Reuse questionRoutes for evaluation endpoints
 app.use('/api/students', studentRoutes); // Student endpoints
+app.use('/api/teacher', evaluationRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/tests', testsRoutes);
+app.use('/api/attempts', attemptRoutes);
 
 // --- Initialize Supabase ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -50,6 +59,31 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 const upload = multer({ storage: multer.memoryStorage() });
 
+/** Map Gemini / config errors to proper HTTP status instead of always 500. */
+function mapGenerateQuestionsError(error) {
+    const msg = error?.message || String(error);
+    const status = error?.status ?? error?.statusCode;
+    const lower = msg.toLowerCase();
+    if (
+        status === 403 ||
+        lower.includes('leaked') ||
+        lower.includes('permission_denied') ||
+        lower.includes('api key not valid')
+    ) {
+        return {
+            http: 403,
+            error:
+                'Gemini API key was rejected or revoked. Create a new key in Google AI Studio, set GEMINI_API_KEY in server/.env, restart the server, and never commit the key.',
+        };
+    }
+    if (status === 429 || lower.includes('resource_exhausted') || lower.includes('quota')) {
+        return { http: 429, error: 'Gemini rate limit or quota exceeded. Try again later.' };
+    }
+    if (lower.includes('gemini_api_key') || msg.includes('GEMINI_API_KEY')) {
+        return { http: 503, error: msg };
+    }
+    return { http: 500, error: msg || 'Failed to generate questions.' };
+}
 
 // --- FACTORY-POWERED ENDPOINT ---
 app.post('/api/generate-questions', upload.array('files'), async (req, res) => {
@@ -70,7 +104,8 @@ app.post('/api/generate-questions', upload.array('files'), async (req, res) => {
 
     } catch (error) {
         console.error("\n>>> BACKEND CRASH ERROR:", error);
-        res.status(500).json({ error: error.message || "Failed to generate questions." });
+        const { http, error: message } = mapGenerateQuestionsError(error);
+        res.status(http).json({ error: message });
     }
 });
 

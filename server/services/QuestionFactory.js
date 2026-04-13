@@ -15,8 +15,13 @@ class AIQuestionGenerator extends IQuestionGenerator {
     }
 
     async generate({ prompt, count, difficulty, files }) {
+        if (!process.env.GEMINI_API_KEY?.trim()) {
+            throw new Error(
+                'GEMINI_API_KEY is not set. Add it to server/.env (see Google AI Studio) and restart the server.',
+            );
+        }
         console.log(`--> [AI Generator] Creating ${count} ${difficulty} questions...`);
-        
+
         const promptParts = [];
 
         if (files && files.length > 0) {
@@ -113,7 +118,7 @@ class HybridGenerator extends IQuestionGenerator {
         console.log("--> [Hybrid Generator] Initializing Split Generation (AI + Manual Blanks)...");
         
 
-        const aiCount = totalCount 
+        const aiCount = Math.max(1, parseInt(params.count, 10) || 5);
 
         // Execute both generators in parallel
         const [aiQuestions] = await Promise.all([

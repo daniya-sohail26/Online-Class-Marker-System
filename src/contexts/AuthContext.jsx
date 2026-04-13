@@ -73,6 +73,23 @@ export function AuthProvider({ children }) {
               name:      resolvedName,
               email:     resolvedEmail,
               is_active: userRow?.is_active ?? true,
+        const { data: userRow, error: userErr } = await supabase
+          .from("users")
+          .select("*")
+          .eq("auth_id", sessionUser.id)
+          .maybeSingle();
+
+        if (userErr) {
+          console.error("users lookup:", userErr);
+        }
+
+        if (!userRow) {
+          if (mounted) {
+            setProfile({
+              publicUserId: null,
+              role: intendedRole === "admin" ? "admin" : "unknown",
+              name: sessionUser.email?.split("@")[0] || "User",
+              email: sessionUser.email,
             });
           }
           return;
@@ -104,6 +121,49 @@ export function AuthProvider({ children }) {
               student_record_id: studentRow?.id,              // students.id (if needed)
               enrollment_number: studentRow?.enrollment_number ?? "",
               course_id:         studentRow?.course_id ?? "",
+        if (intendedRole === "admin" && userRow.role === "admin") {
+          if (mounted) {
+            setProfile({
+              publicUserId: userRow.id,
+              id: userRow.id,
+              role: "admin",
+              name: userRow.name,
+              email: userRow.email,
+            });
+          }
+          return;
+        }
+
+        if (userRow.role === "teacher") {
+          const { data: teacherData } = await supabase
+            .from("teachers")
+            .select("*")
+            .eq("user_id", userRow.id)
+            .maybeSingle();
+
+          if (mounted) {
+            setProfile({
+              publicUserId: userRow.id,
+              teacherId: teacherData?.id,
+              id: teacherData?.id ?? userRow.id,
+              role: "teacher",
+              name: userRow.name,
+              email: userRow.email,
+              /** True when login toggle was Admin but public.users.role is still teacher */
+              adminPortalDenied: intendedRole === "admin",
+            });
+          }
+          return;
+        }
+
+        if (userRow.role === "student") {
+          if (mounted) {
+            setProfile({
+              publicUserId: userRow.id,
+              id: userRow.id,
+              role: "student",
+              name: userRow.name,
+              email: userRow.email,
             });
           }
           return;
@@ -129,6 +189,11 @@ export function AuthProvider({ children }) {
             email:     resolvedEmail,
             is_active: userRow?.is_active ?? true,
             course_id: teacherRow?.course_id ?? "",
+            publicUserId: userRow.id,
+            id: userRow.id,
+            role: userRow.role,
+            name: userRow.name,
+            email: userRow.email,
           });
         }
       } catch (err) {
@@ -147,6 +212,11 @@ export function AuthProvider({ children }) {
         handleAuthState(session?.user ?? null);
       }
     );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      handleAuthState(session?.user ?? null);
+    });
 
     return () => {
       mounted = false;
@@ -164,4 +234,8 @@ export function AuthProvider({ children }) {
       {!loading && children}
     </AuthContext.Provider>
   );
+}
+  const value = useMemo(() => ({ user, profile, loading, signOut }), [user, profile, loading]);
+
+  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
 }

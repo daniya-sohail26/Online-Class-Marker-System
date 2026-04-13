@@ -220,7 +220,6 @@ export default function TestCreationWizard() {
         startTime: new Date(startTime).toISOString(),
         endTime: new Date(endTime).toISOString(),
         isPublished: true,
-        createdBy: "Dr. John Smith" // Mock teacher name as requested
       };
 
       if (isEditing) {

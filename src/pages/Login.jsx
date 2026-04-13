@@ -58,8 +58,33 @@ export default function Login() {
       if (profile.role === "student") defaultPath = "/student/dashboard";
       const from = location.state?.from?.pathname || defaultPath;
       navigate(from, { replace: true });
+    if (!profile || location.pathname !== "/login") return;
+
+    const fromPath = location.state?.from?.pathname;
+    const role = profile.role;
+
+    if (profile.adminPortalDenied) {
+      return;
     }
-  }, [profile, navigate, location]);
+
+    if (role === "admin") {
+      const target =
+        fromPath && fromPath.startsWith("/admin")
+          ? fromPath
+          : "/admin/dashboard";
+      navigate(target, { replace: true });
+      return;
+    }
+    if (role === "teacher") {
+      const target =
+        fromPath && fromPath.startsWith("/teacher")
+          ? fromPath
+          : "/teacher/dashboard";
+      navigate(target, { replace: true });
+      return;
+    }
+    // student / unknown: stay on /login (navbar "Login", sign out, switch account) — no redirect to /
+  }, [profile?.id, profile?.role, profile?.adminPortalDenied, navigate, location.pathname, location.state?.from?.pathname]);
 
   const handleLogin = async (e) => {
     e.preventDefault(); 
@@ -78,23 +103,22 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // 🌟 THE FIX: Save the exact button the user clicked so AuthContext knows what to do!
-      localStorage.setItem("portal_role", role); 
+      localStorage.setItem("portal_role", role);
 
-      const { error: authError } = await supabase.auth.signInWithPassword({ 
-        email: email.trim(), 
-        password 
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
       });
 
       if (authError) throw authError;
-
     } catch (err) {
       console.error("Login Error:", err);
       let message = err.message;
       if (message.includes("Invalid login credentials")) message = "Incorrect email or password.";
       setError(message);
-      setLoading(false); 
-    } 
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -121,6 +145,27 @@ export default function Login() {
             </Box>
 
             {successMessage && <Alert severity="success" sx={{ mb: 2, borderRadius: "12px" }}>{successMessage}</Alert>}
+            {profile?.adminPortalDenied && (
+              <Alert
+                severity="warning"
+                sx={{ mb: 2, borderRadius: "12px" }}
+                action={
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => {
+                      localStorage.setItem("portal_role", "teacher");
+                      window.location.reload();
+                    }}
+                  >
+                    Continue to Teacher portal
+                  </Button>
+                }
+              >
+                You chose <strong>Admin</strong>, but this account is a <strong>teacher</strong> in the database. The Admin portal only opens for users with{" "}
+                <code style={{ color: "inherit" }}>role = &apos;admin&apos;</code> in <code style={{ color: "inherit" }}>public.users</code>. Ask a database admin to update your row, or use the button to open the Teacher portal.
+              </Alert>
+            )}
             {error && <Alert severity="error" onClose={() => setError("")} sx={{ mb: 2, borderRadius: "12px" }}>{error}</Alert>}
 
             <ToggleButtonGroup

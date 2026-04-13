@@ -77,7 +77,8 @@ export default function LiveMonitoring() {
             const poller = setInterval(() => syncData(course.id), 5000);
 
             // 📡 WEBSOCKET: Real-time trigger
-            socketRef.current = io("http://localhost:5000", { transports: ['websocket'] });
+            const socketUrl = import.meta.env.VITE_SOCKET_URL || `${window.location.protocol}//${window.location.hostname}:5000`;
+            socketRef.current = io(socketUrl, { transports: ["websocket"] });
             socketRef.current.on("connect", () => {
                 setIsConnected(true);
                 socketRef.current.emit("subscribe_to_course", course.id);
@@ -116,8 +117,22 @@ export default function LiveMonitoring() {
             <Stack direction="row" justifyContent="space-between" alignItems="center" mb={4}>
                 <Box>
                     <Typography variant="h4" fontWeight={900} sx={{ letterSpacing: '-1px' }}>Live Exam Center</Typography>
-                    <Typography color="#00DDB3" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{ width: 8, height: 8, bgcolor: isConnected ? "#00DDB3" : "#ef4444", borderRadius: "50%", animation: isConnected ? "pulse 2s infinite" : "none" }} />
+                    <Typography
+                        component="div"
+                        color="#00DDB3"
+                        sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
+                        <Box
+                            component="span"
+                            sx={{
+                                width: 8,
+                                height: 8,
+                                bgcolor: isConnected ? "#00DDB3" : "#ef4444",
+                                borderRadius: "50%",
+                                animation: isConnected ? "pulse 2s infinite" : "none",
+                                display: "inline-block",
+                            }}
+                        />
                         {courseInfo.name} | {isConnected ? "LIVE SYNC ACTIVE" : "RECONNECTING..."}
                     </Typography>
                 </Box>
@@ -239,7 +254,17 @@ export default function LiveMonitoring() {
                                                 size="small" 
                                                 sx={{ bgcolor: `${student.statusColor}20`, color: student.statusColor, fontWeight: 900, borderRadius: '8px' }} 
                                             />
-                                            <Typography variant="caption" sx={{ color: student.violations > 3 ? '#ef4444' : '#fff', fontWeight: 900, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                            <Typography
+                                                component="div"
+                                                variant="caption"
+                                                sx={{
+                                                    color: student.violations > 3 ? "#ef4444" : "#fff",
+                                                    fontWeight: 900,
+                                                    display: "flex",
+                                                    alignItems: "center",
+                                                    gap: 0.5,
+                                                }}
+                                            >
                                                 {student.violations > 0 && <Flag size={12} />}
                                                 {student.violations} Flags
                                             </Typography>

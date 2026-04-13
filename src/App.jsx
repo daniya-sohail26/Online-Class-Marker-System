@@ -35,6 +35,8 @@ import TeacherEvaluationPanel from "./pages/EvaluationDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
 import StudentResults from "./pages/StudentResults";
 import ResultsPage from "./pages/ResultsPage";
+import StudentExamResults from "./pages/StudentExamResults";
+
 function App() {
   return (
     <ThemeProvider theme={theme}>
@@ -58,6 +60,7 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/exam-results/:attemptId" element={<StudentExamResults />} />
 
             {/* Protected Teacher Routes */}
             <Route

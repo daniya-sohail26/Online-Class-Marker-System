@@ -52,6 +52,8 @@ export default function TestTemplateBuilder() {
   const [marksPerQ, setMarksPerQ] = useState(2.0);
   const [hasNegativeMarking, setHasNegativeMarking] = useState(false);
   const [penalty, setPenalty] = useState(0.5);
+  /** From this wrong-answer ordinal onward, apply penalty (default 3 = first two wrongs are 0). */
+  const [wrongThreshold, setWrongThreshold] = useState(3);
 
   // --- 4. BEHAVIOR & SECURITY STATE ---
   const [behavior, setBehavior] = useState({
@@ -175,6 +177,9 @@ export default function TestTemplateBuilder() {
         marks_per_question: parseFloat(marksPerQ) || 0,
         negative_marking_enabled: hasNegativeMarking,
         negative_marking_penalty: hasNegativeMarking ? (parseFloat(penalty) || 0) : 0,
+        negative_marking_wrong_threshold: hasNegativeMarking
+          ? Math.max(1, parseInt(String(wrongThreshold), 10) || 3)
+          : 3,
         
         // Unpacked the behavior object directly into the specific columns!
         shuffle_questions: behavior.shuffleQs,
@@ -213,6 +218,7 @@ export default function TestTemplateBuilder() {
       setMarksPerQ(2.0);
       setHasNegativeMarking(false);
       setPenalty(0.5);
+      setWrongThreshold(3);
       
     } catch (err) {
       const errorMessage = err.message || "Failed to save template. Please check database configuration.";
@@ -236,6 +242,7 @@ export default function TestTemplateBuilder() {
     setMarksPerQ(template.marks_per_question ?? 2.0);
     setHasNegativeMarking(template.negative_marking_enabled ?? false);
     setPenalty(template.negative_marking_penalty ?? 0.5);
+    setWrongThreshold(template.negative_marking_wrong_threshold ?? 3);
     
     // Repack the individual columns back into the behavior state object
     setBehavior({
@@ -460,11 +467,25 @@ export default function TestTemplateBuilder() {
                         </Box>
 
                         <Collapse in={hasNegativeMarking}>
-                          <Box sx={{ mt: 3, pt: 3, borderTop: "1px dashed rgba(255,255,255,0.1)", display: "flex", alignItems: "center", gap: 2 }}>
-                            <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>Deduct</Typography>
-                            <TextField size="small" type="number" value={penalty} onChange={(e) => setPenalty(e.target.value)} sx={{ width: 80, "& .MuiOutlinedInput-root": { borderRadius: "8px", color: "#ff4d4d", fontWeight: 800, bgcolor: "rgba(255,0,0,0.05)" } }} />
-                            <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>marks for every wrong answer.</Typography>
-                          </Box>
+                          <Stack spacing={2} sx={{ mt: 3, pt: 3, borderTop: "1px dashed rgba(255,255,255,0.1)" }}>
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+                              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>Deduct</Typography>
+                              <TextField size="small" type="number" value={penalty} onChange={(e) => setPenalty(e.target.value)} sx={{ width: 80, "& .MuiOutlinedInput-root": { borderRadius: "8px", color: "#ff4d4d", fontWeight: 800, bgcolor: "rgba(255,0,0,0.05)" } }} />
+                              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>marks per skipped question, and from wrong answer</Typography>
+                              <TextField
+                                size="small"
+                                type="number"
+                                inputProps={{ min: 1 }}
+                                value={wrongThreshold}
+                                onChange={(e) => setWrongThreshold(e.target.value)}
+                                sx={{ width: 72, "& .MuiOutlinedInput-root": { borderRadius: "8px", color: "#ff4d4d", fontWeight: 800, bgcolor: "rgba(255,0,0,0.05)" } }}
+                              />
+                              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>onward (earlier wrongs score 0).</Typography>
+                            </Box>
+                            <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.45)", display: "block" }}>
+                              Example: threshold 3 → 1st and 2nd wrong answers get 0; 3rd wrong onward get −penalty. Empty options always get −penalty.
+                            </Typography>
+                          </Stack>
                         </Collapse>
                       </Paper>
                     </Grid>
@@ -595,9 +616,11 @@ export default function TestTemplateBuilder() {
                             </Box>
 
                             {hasNegativeMarking && (
-                              <Box display="flex" alignItems="center" gap={1.5}>
-                                <X size={16} color="#ff4d4d" />
-                                <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.8)" }}>Minus {penalty} Pts per wrong answer</Typography>
+                              <Box display="flex" alignItems="flex-start" gap={1.5}>
+                                <X size={16} color="#ff4d4d" style={{ marginTop: 2 }} />
+                                <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.8)" }}>
+                                  −{penalty} per skip; from {wrongThreshold}rd wrong onward; earlier wrongs 0
+                                </Typography>
                               </Box>
                             )}
                           </Stack>
