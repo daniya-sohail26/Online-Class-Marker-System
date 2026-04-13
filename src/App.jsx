@@ -90,11 +90,11 @@ function App() {
                           element={<LiveMonitoring />}
                         />
                         <Route
-                          path="/template-builder"
+                          path="template-builder"
                           element={<TestTemplateBuilder />}
                         />
                         <Route
-                          path="/evaluation"
+                          path="evaluation"
                           element={<TeacherEvaluationPanel />}
                         />
                         <Route

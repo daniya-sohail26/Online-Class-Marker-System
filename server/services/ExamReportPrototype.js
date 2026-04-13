@@ -38,6 +38,8 @@ export function createEmptyExamReport() {
       correctCount: 0,
       wrongCount: 0,
       accuracyPct: 0,
+      correctScoredMarks: 0,
+      negativeMarks: 0,
     },
     questions: [],
   };
@@ -114,6 +116,9 @@ export function buildExamReport(audience, { attempt, test, template, user, enrol
   });
 
   let correct = 0;
+  let correctScoredMarks = 0;
+  let negativeMarks = 0;
+  
   sorted.forEach((ans, index) => {
     const q = ans.questions;
     const correctLetter = normLetter(q?.correct_option);
@@ -124,6 +129,11 @@ export function buildExamReport(audience, { attempt, test, template, user, enrol
         : selectedLetter != null && correctLetter != null && selectedLetter === correctLetter;
 
     if (isCorrect) correct += 1;
+    
+    if (ans.marks_awarded != null) {
+      if (ans.marks_awarded > 0) correctScoredMarks += ans.marks_awarded;
+      if (ans.marks_awarded < 0) negativeMarks += Math.abs(ans.marks_awarded);
+    }
 
     report.questions.push({
       index: index + 1,
@@ -145,6 +155,8 @@ export function buildExamReport(audience, { attempt, test, template, user, enrol
   report.stats.correctCount = correct;
   report.stats.wrongCount = Math.max(0, n - correct);
   report.stats.accuracyPct = n > 0 ? Math.round((correct / n) * 100) : 0;
+  report.stats.correctScoredMarks = correctScoredMarks;
+  report.stats.negativeMarks = negativeMarks;
 
   return report;
 }

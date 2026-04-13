@@ -73,7 +73,7 @@ export default function QuestionBank() {
         }
 
         if (dbUserId === authId) {
-           const columnsToTry = ["auth_id", "user_id"];
+           const columnsToTry = ["auth_id"];
            for (const col of columnsToTry) {
                const { data: userByCol } = await supabase.from("users").select("id").eq(col, authId).maybeSingle();
                if (userByCol && userByCol.id) { dbUserId = userByCol.id; break; }
@@ -636,7 +636,7 @@ export default function QuestionBank() {
                       <Button variant="outlined" size="small" disabled={isLoadingExam} onClick={() => handleViewExamDetails(exam)} sx={{ borderColor: "rgba(0, 221, 179, 0.3)", color: "#00DDB3", textTransform: "none", borderRadius: "8px", fontWeight: 700 }}>
                         View Exam Details
                       </Button>
-                      <Button variant="outlined" size="small" onClick={() => navigate("/evaluation")} sx={{ borderColor: "rgba(255,255,255,0.15)", color: "#fff", textTransform: "none", borderRadius: "8px" }}>
+                      <Button variant="outlined" size="small" onClick={() => navigate("/teacher/evaluation")} sx={{ borderColor: "rgba(255,255,255,0.15)", color: "#fff", textTransform: "none", borderRadius: "8px" }}>
                         View Student Results
                       </Button>
                     </Stack>

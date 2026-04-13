@@ -15,7 +15,7 @@ import {
   TableRow,
   Chip,
 } from "@mui/material";
-import { ArrowLeft, Eye } from "lucide-react";
+import { ArrowLeft, Eye, CheckCircle } from "lucide-react";
 import ExamReportView from "../components/ExamReportView";
 import { authFetch } from "../utils/authFetch";
 
@@ -82,6 +82,24 @@ export default function EvaluationDashboard() {
       setError(err.message);
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const handleEvaluateAttempt = async (attemptId) => {
+    setError("");
+    try {
+      const res = await authFetch("/api/teacher/evaluate-attempt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attemptId }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || "Evaluation failed");
+      }
+      await fetchMainPageData();
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -191,21 +209,40 @@ export default function EvaluationDashboard() {
                         )}
                       </TableCell>
                       <TableCell sx={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                        <Button
-                          onClick={() => handleViewDetails(attempt.attempt_id)}
-                          startIcon={<Eye size={16} />}
-                          sx={{
-                            background: "linear-gradient(135deg, rgba(0,221,179,0.1), rgba(6,182,212,0.1))",
-                            color: "#00DDB3",
-                            textTransform: "none",
-                            borderRadius: "8px",
-                            "&:hover": {
-                              background: "linear-gradient(135deg, rgba(0,221,179,0.2), rgba(6,182,212,0.2))",
-                            },
-                          }}
-                        >
-                          Review
-                        </Button>
+                        <Box sx={{ display: "flex", gap: 1 }}>
+                          <Button
+                            onClick={() => handleViewDetails(attempt.attempt_id)}
+                            startIcon={<Eye size={16} />}
+                            sx={{
+                              background: "linear-gradient(135deg, rgba(0,221,179,0.1), rgba(6,182,212,0.1))",
+                              color: "#00DDB3",
+                              textTransform: "none",
+                              borderRadius: "8px",
+                              "&:hover": {
+                                background: "linear-gradient(135deg, rgba(0,221,179,0.2), rgba(6,182,212,0.2))",
+                              },
+                            }}
+                          >
+                            Review
+                          </Button>
+                          {attempt.total_score == null && !attempt.in_progress && (
+                            <Button
+                              onClick={() => handleEvaluateAttempt(attempt.attempt_id)}
+                              startIcon={<CheckCircle size={16} />}
+                              sx={{
+                                background: "linear-gradient(135deg, rgba(34,197,94,0.1), rgba(34,197,94,0.2))",
+                                color: "#22c55e",
+                                textTransform: "none",
+                                borderRadius: "8px",
+                                "&:hover": {
+                                  background: "linear-gradient(135deg, rgba(34,197,94,0.2), rgba(34,197,94,0.3))",
+                                },
+                              }}
+                            >
+                              Evaluate
+                            </Button>
+                          )}
+                        </Box>
                       </TableCell>
                     </TableRow>
                   ))

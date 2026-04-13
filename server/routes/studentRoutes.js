@@ -1,6 +1,7 @@
 import express from 'express';
 import { supabase } from '../config/supabaseClient.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { scoreAttemptById } from '../services/scoreAttemptService.js';
 
 const router = express.Router();
 
@@ -183,26 +184,37 @@ router.get('/results/:attemptId', authenticateToken, async (req, res) => {
 
 /**
  * PATCH /api/students/attempts/:attemptId/mark-submitted
- * Mark an attempt as submitted by setting submitted_at timestamp
- */
-router.patch('/attempts/:attemptId/mark-submitted', authenticateToken, async (req, res) => {
-  const { attemptId } = req.params;
+   * Mark an attempt as submitted by setting submitted_at timestamp and calculating score immediately
+   */
+  router.patch('/attempts/:attemptId/mark-submitted', authenticateToken, async (req, res) => {
+    const { attemptId } = req.params;
 
-  try {
-    const { data, error } = await supabase
-      .from('attempts')
-      .update({ submitted_at: new Date().toISOString() })
-      .eq('id', attemptId)
-      .select('id, test_id, submitted_at');
+    try {
+      // 1. Mark as submitted
+      const { data, error } = await supabase
+        .from('attempts')
+        .update({ submitted_at: new Date().toISOString() })
+        .eq('id', attemptId)
+        .select('id, test_id, submitted_at');
 
-    if (error) throw error;
+      if (error) throw error;
 
-    res.json({
-      success: true,
-      message: 'Attempt marked as submitted',
-      data: data[0]
-    });
-  } catch (error) {
+      // 2. Score attempt immediately
+      let scoreResult = null;
+      try {
+        scoreResult = await scoreAttemptById(supabase, attemptId);
+        if (scoreResult.error) {
+          console.error('[scoreAttemptById error on submission]:', scoreResult.error);
+        }
+      } catch (scoreErr) {
+        console.error('[Score Attempt error]:', scoreErr);
+      }
+
+      res.json({
+        success: true,
+        message: 'Attempt marked as submitted',
+        data: data[0],
+        scoreResult
     console.error('[PATCH /attempts/:attemptId/mark-submitted] error:', error);
     res.status(500).json({ error: error.message });
   }

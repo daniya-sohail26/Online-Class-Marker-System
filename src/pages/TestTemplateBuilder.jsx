@@ -83,7 +83,7 @@ export default function TestTemplateBuilder() {
         }
 
         if (dbUserId === authId) {
-           const columnsToTry = ["auth_id", "user_id"];
+           const columnsToTry = ["auth_id"];
            for (const col of columnsToTry) {
                const { data: userByCol } = await supabase.from("users").select("id").eq(col, authId).maybeSingle();
                if (userByCol && userByCol.id) { dbUserId = userByCol.id; break; }

@@ -115,9 +115,17 @@ export default function ExamReportView({ report, glassCardStyle }) {
             <Typography variant="h3" fontWeight={900} color="#0ea5e9">
               {attempt?.score ?? "—"}
             </Typography>
-            <Typography variant="subtitle2" color="text.secondary">
-              Total score
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+              Final score
             </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mt: 1 }}>
+              <Typography variant="caption" sx={{ color: '#4ade80' }}>
+                +{stats?.correctScoredMarks ?? 0} Correct
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#f87171' }}>
+                -{stats?.negativeMarks ?? 0} Penalty
+              </Typography>
+            </Box>
           </Card>
         </Grid>
         <Grid item xs={12} md={4}>
