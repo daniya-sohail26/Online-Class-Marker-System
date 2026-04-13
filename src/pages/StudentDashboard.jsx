@@ -36,6 +36,7 @@ function getTestStatus(test, submittedIds) {
   const end   = test.availabilityEnd;
   const hasValidWindow = start && end && end > start;
 
+  // IMPORTANT: Check submitted FIRST - submitted tests are always "completed" regardless of time window
   if (submittedIds.has(test.id))              return "completed";
   if (hasValidWindow && now > end)            return "completed";
   if (hasValidWindow && now < start)          return "upcoming";
@@ -236,12 +237,11 @@ export default function StudentDashboard() {
         if (end > start) scheduleMap[s.test_id] = { start, end };
       }
 
-      // 4. Student's submitted attempts
+      // 4. Student's attempts (ALL attempts, including in-progress)
       const { data: attemptsData, error: attemptsErr } = await supabase
         .from("attempts")
         .select("id, test_id, score, submitted_at, created_at")
         .eq("student_id", profile.user_id)
-        .not("submitted_at", "is", null)
         .order("created_at", { ascending: false });
 
       if (attemptsErr) throw attemptsErr;

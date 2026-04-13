@@ -26,6 +26,44 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { motion } from "framer-motion";
 
+// --- CUSTOM SVG LOGO COMPONENT ---
+const ClassMarkerLogo = ({ size = 48, transparent = false }) => (
+  <svg width={size} height={size} viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#0F172A" />
+        <stop offset="100%" stopColor="#020617" />
+      </linearGradient>
+      <linearGradient id="gridGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.1" />
+        <stop offset="100%" stopColor="#00DDB3" stopOpacity="0.0" />
+      </linearGradient>
+      <linearGradient id="leftLegGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#3B82F6" />
+        <stop offset="100%" stopColor="#06B6D4" />
+      </linearGradient>
+      <linearGradient id="rightLegGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#06B6D4" />
+        <stop offset="100%" stopColor="#00DDB3" />
+      </linearGradient>
+      <filter id="foldShadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="-2" dy="6" stdDeviation="4" floodColor="#000" floodOpacity="0.6" />
+      </filter>
+      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="10" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
+    </defs>
+    {!transparent && <rect width="256" height="256" rx="60" fill="url(#bgGrad)" />}
+    <circle cx="128" cy="128" r="96" fill="none" stroke="url(#gridGrad)" strokeWidth="2" />
+    <circle cx="128" cy="128" r="64" fill="none" stroke="url(#gridGrad)" strokeWidth="1" strokeDasharray="4 6" />
+    <path d="M 56 180 L 92 108 L 140 172 L 200 76" fill="none" stroke="#00DDB3" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" opacity="0.15" filter="url(#glow)" />
+    <path d="M 56 180 L 92 108 L 128 156" fill="none" stroke="url(#leftLegGrad)" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M 104 124 L 140 172 L 200 76" fill="none" stroke="url(#rightLegGrad)" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" filter="url(#foldShadow)" />
+    <circle cx="200" cy="76" r="6" fill="#FFFFFF" filter="url(#glow)" />
+  </svg>
+);
+
 export default function StudentSidebar() {
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
@@ -62,8 +100,18 @@ export default function StudentSidebar() {
         backdropFilter: "blur(20px)",
       }}
     >
+      {/* ClassMarker Logo */}
+      <Box sx={{ p: 2, mb: 2, display: "flex", alignItems: "center", gap: 1.5, cursor: "pointer" }} onClick={() => navigate("/")}>
+        <ClassMarkerLogo size={36} transparent={true} />
+        <Typography variant="h5" sx={{ fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" }}>
+          Class<Box component="span" sx={{ color: "#00DDB3" }}>Marker</Box>
+        </Typography>
+      </Box>
+
+      <Divider sx={{ borderColor: "rgba(255,255,255,0.1)", mb: 2 }} />
+
       {/* Header */}
-      <Box sx={{ p: 3, display: "flex", alignItems: "center", gap: 2 }}>
+      <Box sx={{ p: 2, display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
         <Box
           sx={{
             w: 40,

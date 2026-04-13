@@ -146,7 +146,7 @@ export default function StudentResults() {
                         />
                       </TableCell>
                       <TableCell sx={{ color: "rgba(255,255,255,0.7)" }}>
-                        {new Date(attempt.created_at).toLocaleDateString()}
+                        {attempt.submitted_at ? new Date(attempt.submitted_at).toLocaleDateString() : "—"}
                       </TableCell>
                     </TableRow>
                   );
