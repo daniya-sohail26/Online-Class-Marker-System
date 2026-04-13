@@ -52,20 +52,14 @@ export default function Login() {
   const successMessage = location.state?.message || "";
 
   useEffect(() => {
-    if (profile) {
-      let defaultPath = "/teacher/dashboard";
-      if (profile.role === "admin") defaultPath = "/admin/dashboard";
-      if (profile.role === "student") defaultPath = "/student/dashboard";
-      const from = location.state?.from?.pathname || defaultPath;
-      navigate(from, { replace: true });
     if (!profile || location.pathname !== "/login") return;
-
-    const fromPath = location.state?.from?.pathname;
-    const role = profile.role;
 
     if (profile.adminPortalDenied) {
       return;
     }
+
+    const fromPath = location.state?.from?.pathname;
+    const role = profile.role;
 
     if (role === "admin") {
       const target =

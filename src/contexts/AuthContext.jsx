@@ -47,12 +47,10 @@ export function AuthProvider({ children }) {
 
         const intendedRole = localStorage.getItem("portal_role") || "teacher";
 
-        // ── Step 1: Always fetch the users row via auth_id ──────────────────
-        // auth.users.id → users.auth_id → users.id
         const { data: userRow, error: userErr } = await supabase
           .from("users")
           .select("id, name, email, role, is_active")
-          .eq("auth_id", sessionUser.id)   // auth.users.id matches users.auth_id
+          .eq("auth_id", sessionUser.id)
           .maybeSingle();
 
         if (userErr) {
@@ -61,27 +59,7 @@ export function AuthProvider({ children }) {
 
         const resolvedName  = userRow?.name  ?? sessionUser.email.split("@")[0];
         const resolvedEmail = userRow?.email ?? sessionUser.email;
-        const usersId       = userRow?.id;   // users.id — needed for student/teacher lookup
-
-        // ── Admin ────────────────────────────────────────────────────────────
-        if (intendedRole === "admin") {
-          if (mounted) {
-            setProfile({
-              id:        usersId ?? sessionUser.id,
-              user_id:   sessionUser.id,
-              role:      "admin",
-              name:      resolvedName,
-              email:     resolvedEmail,
-              is_active: userRow?.is_active ?? true,
-        const { data: userRow, error: userErr } = await supabase
-          .from("users")
-          .select("*")
-          .eq("auth_id", sessionUser.id)
-          .maybeSingle();
-
-        if (userErr) {
-          console.error("users lookup:", userErr);
-        }
+        const usersId       = userRow?.id;
 
         if (!userRow) {
           if (mounted) {
@@ -95,13 +73,64 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        // ── Student ──────────────────────────────────────────────────────────
+        if (intendedRole === "admin") {
+          if (userRow.role === "admin") {
+            if (mounted) {
+              setProfile({
+                publicUserId: userRow.id,
+                id: userRow.id,
+                user_id: userRow.id,
+                role: "admin",
+                name: resolvedName,
+                email: resolvedEmail,
+                is_active: userRow.is_active ?? true,
+              });
+            }
+            return;
+          }
+          if (userRow.role === "teacher") {
+            const { data: teacherData } = await supabase
+              .from("teachers")
+              .select("id")
+              .eq("user_id", userRow.id)
+              .maybeSingle();
+
+            if (mounted) {
+              setProfile({
+                publicUserId: userRow.id,
+                teacherId: teacherData?.id,
+                id: teacherData?.id ?? userRow.id,
+                user_id: userRow.id,
+                role: "teacher",
+                name: resolvedName,
+                email: resolvedEmail,
+                is_active: userRow.is_active ?? true,
+                adminPortalDenied: true,
+              });
+            }
+            return;
+          }
+          if (userRow.role === "student") {
+            if (mounted) {
+              setProfile({
+                publicUserId: userRow.id,
+                id: userRow.id,
+                user_id: userRow.id,
+                role: "student",
+                name: resolvedName,
+                email: resolvedEmail,
+                is_active: userRow.is_active ?? true,
+              });
+            }
+            return;
+          }
+        }
+
         if (intendedRole === "student") {
-          // students.user_id = users.id  (NOT auth.users.id)
           const { data: studentRow, error: studentErr } = await supabase
             .from("students")
             .select("id, enrollment_number, course_id")
-            .eq("user_id", usersId)          // users.id ← correct FK
+            .eq("user_id", usersId)
             .maybeSingle();
 
           if (studentErr) {
@@ -110,70 +139,24 @@ export function AuthProvider({ children }) {
 
           if (mounted) {
             setProfile({
-              // users table
               id:                usersId ?? sessionUser.id,
-              user_id:           usersId ?? sessionUser.id,   // used in attempts.student_id
+              user_id:           usersId ?? sessionUser.id,
               role:              "student",
               name:              resolvedName,
               email:             resolvedEmail,
-              is_active:         userRow?.is_active ?? true,
-              // students table
-              student_record_id: studentRow?.id,              // students.id (if needed)
+              is_active:         userRow.is_active ?? true,
+              student_record_id: studentRow?.id,
               enrollment_number: studentRow?.enrollment_number ?? "",
               course_id:         studentRow?.course_id ?? "",
-        if (intendedRole === "admin" && userRow.role === "admin") {
-          if (mounted) {
-            setProfile({
-              publicUserId: userRow.id,
-              id: userRow.id,
-              role: "admin",
-              name: userRow.name,
-              email: userRow.email,
             });
           }
           return;
         }
 
-        if (userRow.role === "teacher") {
-          const { data: teacherData } = await supabase
-            .from("teachers")
-            .select("*")
-            .eq("user_id", userRow.id)
-            .maybeSingle();
-
-          if (mounted) {
-            setProfile({
-              publicUserId: userRow.id,
-              teacherId: teacherData?.id,
-              id: teacherData?.id ?? userRow.id,
-              role: "teacher",
-              name: userRow.name,
-              email: userRow.email,
-              /** True when login toggle was Admin but public.users.role is still teacher */
-              adminPortalDenied: intendedRole === "admin",
-            });
-          }
-          return;
-        }
-
-        if (userRow.role === "student") {
-          if (mounted) {
-            setProfile({
-              publicUserId: userRow.id,
-              id: userRow.id,
-              role: "student",
-              name: userRow.name,
-              email: userRow.email,
-            });
-          }
-          return;
-        }
-
-        // ── Teacher ──────────────────────────────────────────────────────────
         const { data: teacherRow, error: teacherErr } = await supabase
           .from("teachers")
           .select("id, course_id")
-          .eq("user_id", usersId)            // users.id ← correct FK
+          .eq("user_id", usersId)
           .maybeSingle();
 
         if (teacherErr) {
@@ -182,18 +165,15 @@ export function AuthProvider({ children }) {
 
         if (mounted) {
           setProfile({
-            id:        usersId ?? sessionUser.id,
-            user_id:   usersId ?? sessionUser.id,
-            role:      "teacher",
-            name:      resolvedName,
-            email:     resolvedEmail,
-            is_active: userRow?.is_active ?? true,
-            course_id: teacherRow?.course_id ?? "",
+            id:           teacherRow?.id ?? usersId ?? sessionUser.id,
+            user_id:      usersId ?? sessionUser.id,
+            role:         "teacher",
+            name:         resolvedName,
+            email:        resolvedEmail,
+            is_active:    userRow.is_active ?? true,
+            course_id:    teacherRow?.course_id ?? "",
+            teacherId:    teacherRow?.id,
             publicUserId: userRow.id,
-            id: userRow.id,
-            role: userRow.role,
-            name: userRow.name,
-            email: userRow.email,
           });
         }
       } catch (err) {
@@ -212,11 +192,6 @@ export function AuthProvider({ children }) {
         handleAuthState(session?.user ?? null);
       }
     );
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      handleAuthState(session?.user ?? null);
-    });
 
     return () => {
       mounted = false;
@@ -234,8 +209,4 @@ export function AuthProvider({ children }) {
       {!loading && children}
     </AuthContext.Provider>
   );
-}
-  const value = useMemo(() => ({ user, profile, loading, signOut }), [user, profile, loading]);
-
-  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
 }
