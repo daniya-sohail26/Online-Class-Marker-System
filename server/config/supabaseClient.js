@@ -3,13 +3,13 @@ import { createClient } from '@supabase/supabase-js';
 // 1. Detect environment and get variables safely
 const isBrowser = typeof window !== 'undefined';
 
-const supabaseUrl = isBrowser 
-  ? import.meta.env.VITE_SUPABASE_URL 
-  : process.env.VITE_SUPABASE_URL;
+const supabaseUrl = isBrowser
+  ? import.meta.env.VITE_SUPABASE_URL
+  : process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 
-const supabaseAnonKey = isBrowser 
-  ? import.meta.env.VITE_SUPABASE_ANON_KEY 
-  : process.env.VITE_SUPABASE_ANON_KEY;
+const supabaseAnonKey = isBrowser
+  ? import.meta.env.VITE_SUPABASE_ANON_KEY
+  : process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 
 // 2. Debugging (Optional: remove once working)
 if (!supabaseUrl || !supabaseAnonKey) {
