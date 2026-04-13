@@ -181,4 +181,78 @@ router.get('/results/:attemptId', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * PATCH /api/students/attempts/:attemptId/mark-submitted
+ * Mark an attempt as submitted by setting submitted_at timestamp
+ */
+router.patch('/attempts/:attemptId/mark-submitted', authenticateToken, async (req, res) => {
+  const { attemptId } = req.params;
+
+  try {
+    const { data, error } = await supabase
+      .from('attempts')
+      .update({ submitted_at: new Date().toISOString() })
+      .eq('id', attemptId)
+      .select('id, test_id, submitted_at');
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Attempt marked as submitted',
+      data: data[0]
+    });
+  } catch (error) {
+    console.error('[PATCH /attempts/:attemptId/mark-submitted] error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/students/attempts/fix-missing-submitted
+ * Admin utility: Find and fix all attempts with data but no submitted_at
+ */
+router.get('/admin/attempts/fix-missing-submitted', authenticateToken, async (req, res) => {
+  try {
+    // Find attempts with data but no submitted_at
+    const { data: attemptsToFix, error: fetchErr } = await supabase
+      .from('attempts')
+      .select('id, test_id, score, submitted_at, created_at')
+      .is('submitted_at', null)
+      .not('score', 'is', null);  // Has a score = actually completed
+
+    if (fetchErr) throw fetchErr;
+
+    if (!attemptsToFix || attemptsToFix.length === 0) {
+      return res.json({
+        message: 'No attempts need fixing',
+        fixed: 0
+      });
+    }
+
+    // Update all these attempts with submitted_at = now
+    const { data: fixed, error: updateErr } = await supabase
+      .from('attempts')
+      .update({ submitted_at: new Date().toISOString() })
+      .in('id', attemptsToFix.map(a => a.id))
+      .select('id, test_id, score, submitted_at');
+
+    if (updateErr) throw updateErr;
+
+    res.json({
+      success: true,
+      message: `Fixed ${fixed.length} attempts`,
+      fixed: fixed.map(a => ({
+        attempt_id: a.id,
+        test_id: a.test_id,
+        score: a.score,
+        submitted_at: a.submitted_at
+      }))
+    });
+  } catch (error) {
+    console.error('[GET /admin/attempts/fix-missing-submitted] error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
