@@ -15,7 +15,7 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser]       = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -38,11 +38,7 @@ export function AuthProvider({ children }) {
 
     const handleAuthState = async (sessionUser) => {
       if (!sessionUser) {
-        if (mounted) {
-          setUser(null);
-          setProfile(null);
-          setLoading(false);
-        }
+        if (mounted) { setUser(null); setProfile(null); setLoading(false); }
         return;
       }
 
@@ -51,6 +47,32 @@ export function AuthProvider({ children }) {
 
         const intendedRole = localStorage.getItem("portal_role") || "teacher";
 
+        // ── Step 1: Always fetch the users row via auth_id ──────────────────
+        // auth.users.id → users.auth_id → users.id
+        const { data: userRow, error: userErr } = await supabase
+          .from("users")
+          .select("id, name, email, role, is_active")
+          .eq("auth_id", sessionUser.id)   // auth.users.id matches users.auth_id
+          .maybeSingle();
+
+        if (userErr) {
+          console.error("[AuthContext] users lookup failed:", userErr.message);
+        }
+
+        const resolvedName  = userRow?.name  ?? sessionUser.email.split("@")[0];
+        const resolvedEmail = userRow?.email ?? sessionUser.email;
+        const usersId       = userRow?.id;   // users.id — needed for student/teacher lookup
+
+        // ── Admin ────────────────────────────────────────────────────────────
+        if (intendedRole === "admin") {
+          if (mounted) {
+            setProfile({
+              id:        usersId ?? sessionUser.id,
+              user_id:   sessionUser.id,
+              role:      "admin",
+              name:      resolvedName,
+              email:     resolvedEmail,
+              is_active: userRow?.is_active ?? true,
         const { data: userRow, error: userErr } = await supabase
           .from("users")
           .select("*")
@@ -73,6 +95,32 @@ export function AuthProvider({ children }) {
           return;
         }
 
+        // ── Student ──────────────────────────────────────────────────────────
+        if (intendedRole === "student") {
+          // students.user_id = users.id  (NOT auth.users.id)
+          const { data: studentRow, error: studentErr } = await supabase
+            .from("students")
+            .select("id, enrollment_number, course_id")
+            .eq("user_id", usersId)          // users.id ← correct FK
+            .maybeSingle();
+
+          if (studentErr) {
+            console.error("[AuthContext] students lookup failed:", studentErr.message);
+          }
+
+          if (mounted) {
+            setProfile({
+              // users table
+              id:                usersId ?? sessionUser.id,
+              user_id:           usersId ?? sessionUser.id,   // used in attempts.student_id
+              role:              "student",
+              name:              resolvedName,
+              email:             resolvedEmail,
+              is_active:         userRow?.is_active ?? true,
+              // students table
+              student_record_id: studentRow?.id,              // students.id (if needed)
+              enrollment_number: studentRow?.enrollment_number ?? "",
+              course_id:         studentRow?.course_id ?? "",
         if (intendedRole === "admin" && userRow.role === "admin") {
           if (mounted) {
             setProfile({
@@ -121,8 +169,26 @@ export function AuthProvider({ children }) {
           return;
         }
 
+        // ── Teacher ──────────────────────────────────────────────────────────
+        const { data: teacherRow, error: teacherErr } = await supabase
+          .from("teachers")
+          .select("id, course_id")
+          .eq("user_id", usersId)            // users.id ← correct FK
+          .maybeSingle();
+
+        if (teacherErr) {
+          console.error("[AuthContext] teachers lookup failed:", teacherErr.message);
+        }
+
         if (mounted) {
           setProfile({
+            id:        usersId ?? sessionUser.id,
+            user_id:   usersId ?? sessionUser.id,
+            role:      "teacher",
+            name:      resolvedName,
+            email:     resolvedEmail,
+            is_active: userRow?.is_active ?? true,
+            course_id: teacherRow?.course_id ?? "",
             publicUserId: userRow.id,
             id: userRow.id,
             role: userRow.role,
@@ -131,7 +197,7 @@ export function AuthProvider({ children }) {
           });
         }
       } catch (err) {
-        console.error("AuthContext Profile Error:", err);
+        console.error("[AuthContext] profile build error:", err);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -141,6 +207,11 @@ export function AuthProvider({ children }) {
       handleAuthState(session?.user ?? null);
     });
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        handleAuthState(session?.user ?? null);
+      }
+    );
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -149,10 +220,21 @@ export function AuthProvider({ children }) {
 
     return () => {
       mounted = false;
-      if (subscription) subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, []);
 
+  const value = useMemo(
+    () => ({ user, profile, loading, signOut }),
+    [user, profile, loading]
+  );
+
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
+}
   const value = useMemo(() => ({ user, profile, loading, signOut }), [user, profile, loading]);
 
   return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;

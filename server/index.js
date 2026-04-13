@@ -14,6 +14,8 @@ import { QuestionGeneratorFactory } from './services/QuestionFactory.js';
 import courseRoutes from './routes/courseRoutes.js';
 import templateRoutes from './routes/templates.js'; 
 import questionRoutes from './routes/questionRoutes.js';
+import evaluationRoutes from './routes/evaluationRoutes.js'; // New route for evaluation endpoints 
+import studentRoutes from './routes/studentRoutes.js'; // Student routes 
 import evaluationRoutes from './routes/evaluationRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import testsRoutes from './routes/tests.js';
@@ -37,6 +39,8 @@ liveMonitorService.initialize(httpServer);
 app.use('/api/courses', courseRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/questions', questionRoutes);
+app.use('/api/teacher', evaluationRoutes); // Reuse questionRoutes for evaluation endpoints
+app.use('/api/students', studentRoutes); // Student endpoints
 app.use('/api/teacher', evaluationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/tests', testsRoutes);
