@@ -4,6 +4,7 @@ import {
   Typography,
   Button,
   Card,
+  Alert,
   Table,
   TableBody,
   TableCell,
@@ -21,6 +22,7 @@ import { supabase } from "../../../server/config/supabaseClient"; // <-- Added S
 
 export default function AdminSessions() {
   const [sessions, setSessions] = useState([]);
+  const [errorMsg, setErrorMsg] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [name, setName] = useState("");
@@ -28,12 +30,31 @@ export default function AdminSessions() {
   const [endDate, setEndDate] = useState("");
 
   const fetchSessions = async () => {
+    setErrorMsg("");
     if (!supabase) {
+      setSessions([]);
+      setErrorMsg("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your root .env.");
+      return;
+    }
+    const { data, error } = await supabase
+      .from("academic_sessions")
+      .select("*")
+      .order("start_date", { ascending: false });
+
+    if (error) {
+      console.error("[AdminSessions] fetch failed:", error);
+      if (error.code === "PGRST205" || error.message?.includes("404")) {
+        setErrorMsg(
+          "Academic sessions table was not found (404). Run the initial Supabase migration and confirm your .env points to the correct Supabase project."
+        );
+      } else {
+        setErrorMsg(error.message || "Failed to load academic sessions.");
+      }
       setSessions([]);
       return;
     }
-    const { data, error } = await supabase.from("academic_sessions").select("*").order("start_date", { ascending: false });
-    if (!error) setSessions(data || []);
+
+    setSessions(data || []);
   };
 
   useEffect(() => {
@@ -58,19 +79,48 @@ export default function AdminSessions() {
 
   const handleSave = async () => {
     if (!name.trim() || !startDate || !endDate || !supabase) return;
+    setErrorMsg("");
     const payload = { name: name.trim(), start_date: startDate, end_date: endDate };
+
+    let error = null;
     if (editing) {
-      await supabase.from("academic_sessions").update(payload).eq("id", editing.id);
+      const result = await supabase
+        .from("academic_sessions")
+        .update(payload)
+        .eq("id", editing.id);
+      error = result.error;
     } else {
-      await supabase.from("academic_sessions").insert([payload]);
+      const result = await supabase
+        .from("academic_sessions")
+        .insert([payload]);
+      error = result.error;
     }
+
+    if (error) {
+      console.error("[AdminSessions] save failed:", error);
+      if (error.code === "PGRST205" || error.message?.includes("404")) {
+        setErrorMsg(
+          "Could not save session (404). The academic_sessions table is missing in the connected Supabase project."
+        );
+      } else {
+        setErrorMsg(error.message || "Failed to save session.");
+      }
+      return;
+    }
+
     fetchSessions();
     handleClose();
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this session?") || !supabase) return;
-    await supabase.from("academic_sessions").delete().eq("id", id);
+    setErrorMsg("");
+    const { error } = await supabase.from("academic_sessions").delete().eq("id", id);
+    if (error) {
+      console.error("[AdminSessions] delete failed:", error);
+      setErrorMsg(error.message || "Failed to delete session.");
+      return;
+    }
     fetchSessions();
   };
 
@@ -85,6 +135,7 @@ export default function AdminSessions() {
           Add Session
         </Button>
       </Box>
+      {errorMsg && <Alert severity="error" sx={{ mb: 2 }}>{errorMsg}</Alert>}
 
       <Card sx={{ overflow: "hidden" }}>
         <Table>
