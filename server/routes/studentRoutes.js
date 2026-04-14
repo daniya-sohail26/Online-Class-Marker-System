@@ -215,10 +215,13 @@ router.get('/results/:attemptId', authenticateToken, async (req, res) => {
         message: 'Attempt marked as submitted',
         data: data[0],
         scoreResult
-    console.error('[PATCH /attempts/:attemptId/mark-submitted] error:', error);
-    res.status(500).json({ error: error.message });
+      });
+    } catch (error) {
+      console.error('[PATCH /attempts/:attemptId/mark-submitted] error:', error);
+      res.status(500).json({ error: error.message });
+    }
   }
-});
+);
 
 /**
  * GET /api/students/attempts/fix-missing-submitted

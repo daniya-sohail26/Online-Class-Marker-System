@@ -54,6 +54,7 @@ export default function QuestionBank() {
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("new");
+  const [teacherUserId, setTeacherUserId] = useState(null);
 
   const [schedulingData, setSchedulingData] = useState({ date: "", time: "", duration: 60, batch: "" });
 
@@ -78,6 +79,8 @@ export default function QuestionBank() {
                if (userByCol && userByCol.id) { dbUserId = userByCol.id; break; }
            }
         }
+
+        setTeacherUserId(dbUserId);
 
         const { data: teacherData } = await supabase.from("teachers").select("course_id").eq("user_id", dbUserId).not("course_id", "is", null).maybeSingle();
 
@@ -342,7 +345,12 @@ export default function QuestionBank() {
   };
 
   const handleDeployExam = async () => {
-    if (!schedulingData.date || !schedulingData.time) return showToast("Please select a date and time.", "warning");
+    if (!schedulingData.date || !schedulingData.time) {
+      return showToast("Please select a date and time.", "warning");
+    }
+    if (!Number.isFinite(schedulingData.duration) || schedulingData.duration <= 0) {
+      return showToast("Please set a valid duration (minutes).", "warning");
+    }
     
     setIsDeploying(true);
     try {
@@ -355,16 +363,34 @@ export default function QuestionBank() {
         templateIdToUse = template.id;
       }
 
-      const { data: test, error: testError } = await supabase.from('tests').insert([{ name: examTitle, course_id: selectedCourseId, template_id: templateIdToUse }]).select().single();
+      if (!teacherUserId) throw new Error("Missing teacher user id for created_by.");
+
+      const startTimestamp = `${schedulingData.date}T${schedulingData.time}:00`;
+      const startDate = new Date(startTimestamp);
+      const endDate = new Date(startDate.getTime() + (schedulingData.duration * 60 * 1000));
+      const totalMarks = officialBank.reduce((sum, q) => sum + (q.points || 1.0), 0);
+
+      const { data: test, error: testError } = await supabase
+        .from('tests')
+        .insert([
+          {
+            name: examTitle,
+            course_id: selectedCourseId,
+            template_id: templateIdToUse,
+            created_by: teacherUserId,
+            start_time: startDate.toISOString(),
+            end_time: endDate.toISOString(),
+            total_marks: totalMarks,
+            is_published: true
+          }
+        ])
+        .select()
+        .single();
       if (testError) throw new Error(`Test Instance Error: ${testError.message}`);
 
       const testQuestions = officialBank.map(q => ({ test_id: test.id, question_id: q.id, marks: q.points || 1.0 }));
       const { error: tqError } = await supabase.from('test_questions').insert(testQuestions);
       if (tqError) throw new Error(`Question Link Error: ${tqError.message}`);
-
-      const startTimestamp = `${schedulingData.date}T${schedulingData.time}:00`;
-      const startDate = new Date(startTimestamp);
-      const endDate = new Date(startDate.getTime() + (schedulingData.duration * 60 * 1000)); 
 
       const { error: scheduleError } = await supabase.from('test_schedules').insert([{ test_id: test.id, availability_start: startDate.toISOString(), availability_end: endDate.toISOString(), time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone, is_active: true }]);
       if (scheduleError) throw new Error(`Scheduling Error: ${scheduleError.message}`);
@@ -687,7 +713,10 @@ export default function QuestionBank() {
             <Grid container spacing={4} sx={{ mt: 2, textAlign: "left" }}>
               <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth type="date" label="Execution Date" value={schedulingData.date} onChange={(e) => setSchedulingData({...schedulingData, date: e.target.value})} InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
               <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth type="time" label="Launch Time" value={schedulingData.time} onChange={(e) => setSchedulingData({...schedulingData, time: e.target.value})} InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
-              <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth type="number" label="Duration (Mins)" value={schedulingData.duration} onChange={(e) => setSchedulingData({...schedulingData, duration: parseInt(e.target.value)})} InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
+              <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth type="number" label="Duration (Mins)" value={schedulingData.duration} onChange={(e) => {
+                const next = Number(e.target.value);
+                setSchedulingData({ ...schedulingData, duration: Number.isFinite(next) ? next : 0 });
+              }} InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
               <Grid size={{ xs: 12 }}><TextField fullWidth label="Assigned Student Batch" value={schedulingData.batch} onChange={(e) => setSchedulingData({...schedulingData, batch: e.target.value})} placeholder="Ex: BSCS-2026-A" sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
             </Grid>
 

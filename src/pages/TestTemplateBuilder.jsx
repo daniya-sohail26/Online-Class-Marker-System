@@ -517,6 +517,8 @@ export default function TestTemplateBuilder() {
                         <Switch checked={behavior?.preventTabSwitch || false} onChange={(e) => handleBehaviorChange("preventTabSwitch", e.target.checked)} color="warning" />
                       </Paper>
                     </Grid>
+                    {/* Strict Proctoring (Webcam) hidden for now */}
+                    {/*
                     <Grid item xs={12} sm={6}>
                       <Paper sx={{ p: 2.5, bgcolor: "rgba(0,0,0,0.3)", borderRadius: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <Box display="flex" alignItems="center" gap={1.5}>
@@ -526,6 +528,7 @@ export default function TestTemplateBuilder() {
                         <Switch checked={behavior?.strictProctoring || false} onChange={(e) => handleBehaviorChange("strictProctoring", e.target.checked)} color="secondary" />
                       </Paper>
                     </Grid>
+                    */}
                     <Grid item xs={12} sm={6}>
                       <Paper sx={{ p: 2.5, bgcolor: "rgba(0,0,0,0.3)", borderRadius: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <Box display="flex" alignItems="center" gap={1.5}>
