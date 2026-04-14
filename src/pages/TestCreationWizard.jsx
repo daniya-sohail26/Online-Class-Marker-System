@@ -25,17 +25,21 @@ import {
   DialogActions,
 } from '@mui/material';
 import { motion } from 'framer-motion';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Trash2, Eye, Filter, Save } from 'lucide-react';
 import { getCourseQuestions } from '../api/questionApi.js';
 import { createTest, getTestById, updateTest } from '../api/testApi.js';
 import { getAllCourses } from '../api/courseApi.js';
 import { getActiveTemplates } from '../api/templateApi.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 export default function TestCreationWizard() {
   const { testId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { profile } = useAuth();
   const isEditing = !!testId;
+  const prefill = location.state?.prefill || null;
   // --- STEPPER STATE ---
   const [activeStep, setActiveStep] = useState(0);
   const steps = ['Basic Info', 'Select Questions', 'Schedule', isEditing ? 'Review & Update' : 'Review & Publish'];
@@ -45,6 +49,7 @@ export default function TestCreationWizard() {
   const [selectedCourse, setSelectedCourse] = useState('');
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
+  const [isCourseLocked, setIsCourseLocked] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -100,9 +105,24 @@ export default function TestCreationWizard() {
             const date = new Date(testData.endTime || testData.end_time);
             setEndTime(date.toISOString().slice(0, 16));
           }
-        } else if (coursesData.length > 0) {
-          // Only auto-select first course if NOT editing
-          // setSelectedCourse(coursesData[0].id); 
+        } else {
+          const mappedCourseId = profile?.course_id || '';
+          const prefillCourseId = prefill?.courseId || '';
+          const resolvedCourseId = prefillCourseId || mappedCourseId;
+
+          if (resolvedCourseId && coursesData.some((c) => String(c.id) === String(resolvedCourseId))) {
+            setSelectedCourse(resolvedCourseId);
+            setIsCourseLocked(true);
+          }
+
+          if (prefill?.name) setTestName(prefill.name);
+          if (prefill?.templateId) setSelectedTemplate(prefill.templateId);
+          if (Array.isArray(prefill?.questionIds) && prefill.questionIds.length > 0) {
+            setSelectedQuestions(prefill.questionIds);
+          }
+          if (prefill?.startTime) setStartTime(prefill.startTime);
+          if (prefill?.endTime) setEndTime(prefill.endTime);
+          if (prefill?.duration) setDuration(prefill.duration);
         }
       } catch (err) {
         setError('Failed to load initial data');
@@ -115,7 +135,7 @@ export default function TestCreationWizard() {
     };
 
     fetchInitialData();
-  }, [testId, isEditing]);
+  }, [testId, isEditing, prefill, profile?.course_id]);
 
   // --- FETCH QUESTIONS WHEN COURSE CHANGES ---
   useEffect(() => {
@@ -266,6 +286,7 @@ export default function TestCreationWizard() {
                 value={selectedCourse}
                 label="Select Course"
                 onChange={e => setSelectedCourse(e.target.value)}
+                disabled={isCourseLocked}
                 sx={{ color: "#fff" }}
               >
                 {courses.map(course => (
@@ -304,6 +325,20 @@ export default function TestCreationWizard() {
               >
                 Questions will be filtered to show only those from{' '}
                 <strong>{courses.find(c => c.id === selectedCourse)?.name}</strong>
+              </Alert>
+            )}
+            {isCourseLocked && (
+              <Alert
+                severity="info"
+                sx={{
+                  mt: 2,
+                  bgcolor: "rgba(0, 221, 179, 0.05)",
+                  color: "#00DDB3",
+                  border: "1px solid rgba(0, 221, 179, 0.2)",
+                  borderRadius: "12px"
+                }}
+              >
+                Course is locked to your mapped teacher course for consistent test-course assignment.
               </Alert>
             )}
           </Box>
@@ -686,7 +721,7 @@ export default function TestCreationWizard() {
                   '&:hover': { transform: "scale(1.02)", boxShadow: "0 0 20px rgba(0, 221, 179, 0.4)" }
                 }}
               >
-                {loading ? <CircularProgress size={24} color="inherit" /> : (isEditing ? 'Update Test' : 'Publish Test')}
+                {loading ? <CircularProgress size={24} color="inherit" /> : (isEditing ? 'Publish Test' : '')}
               </Button>
             ) : (
               <Button

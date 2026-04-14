@@ -342,44 +342,37 @@ export default function QuestionBank() {
   };
 
   const handleDeployExam = async () => {
-    if (!schedulingData.date || !schedulingData.time) return showToast("Please select a date and time.", "warning");
-    
+    if (!selectedCourseId) return showToast("No mapped course found for this account.", "warning");
+    if (officialBank.length === 0) return showToast("Cannot continue with an empty bank.", "warning");
+
     setIsDeploying(true);
     try {
       await saveBankToDatabase();
-      let templateIdToUse = selectedTemplateId;
 
-      if (!templateIdToUse || templateIdToUse === "new") {
-        const { data: template, error: tError } = await supabase.from('templates').insert([{ course_id: selectedCourseId, name: examTitle, total_questions: officialBank.length, duration_minutes: schedulingData.duration, template_type: 'exam', is_active: true }]).select().single();
-        if (tError) throw new Error(`Template Error: ${tError.message}`);
-        templateIdToUse = template.id;
-      }
+      const startDateTime = schedulingData.date && schedulingData.time
+        ? `${schedulingData.date}T${schedulingData.time}`
+        : "";
 
-      const { data: test, error: testError } = await supabase.from('tests').insert([{ name: examTitle, course_id: selectedCourseId, template_id: templateIdToUse }]).select().single();
-      if (testError) throw new Error(`Test Instance Error: ${testError.message}`);
+      const endDateTime = startDateTime
+        ? new Date(new Date(startDateTime).getTime() + (schedulingData.duration * 60 * 1000)).toISOString().slice(0, 16)
+        : "";
 
-      const testQuestions = officialBank.map(q => ({ test_id: test.id, question_id: q.id, marks: q.points || 1.0 }));
-      const { error: tqError } = await supabase.from('test_questions').insert(testQuestions);
-      if (tqError) throw new Error(`Question Link Error: ${tqError.message}`);
-
-      const startTimestamp = `${schedulingData.date}T${schedulingData.time}:00`;
-      const startDate = new Date(startTimestamp);
-      const endDate = new Date(startDate.getTime() + (schedulingData.duration * 60 * 1000)); 
-
-      const { error: scheduleError } = await supabase.from('test_schedules').insert([{ test_id: test.id, availability_start: startDate.toISOString(), availability_end: endDate.toISOString(), time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone, is_active: true }]);
-      if (scheduleError) throw new Error(`Scheduling Error: ${scheduleError.message}`);
-
-      showToast("Exam successfully scheduled and deployed!", "success");
-      
-      setOfficialBank([]); 
-      setAiDrafts([]); 
-      setWorkspaceMode("sandbox"); 
-      setActiveTab(1); 
-      
-      await fetchCourseData();
-
+      navigate("/teacher/test-creation", {
+        state: {
+          prefill: {
+            source: "question-bank",
+            name: examTitle,
+            courseId: selectedCourseId,
+            templateId: selectedTemplateId && selectedTemplateId !== "new" ? selectedTemplateId : "",
+            questionIds: officialBank.map((q) => q.id),
+            startTime: startDateTime,
+            endTime: endDateTime,
+            duration: schedulingData.duration,
+          },
+        },
+      });
     } catch (err) {
-      showToast(err.message || "Deployment failed. See console.", "error");
+      showToast(err.message || "Could not continue to test creation.", "error");
     } finally {
       setIsDeploying(false);
     }
@@ -658,6 +651,14 @@ export default function QuestionBank() {
                       <Button variant="outlined" size="small" disabled={isLoadingExam} onClick={() => handleViewExamDetails(exam)} sx={{ borderColor: "rgba(0, 221, 179, 0.3)", color: "#00DDB3", textTransform: "none", borderRadius: "8px", fontWeight: 700 }}>
                         View Exam Details
                       </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => navigate(`/teacher/test-editor/${exam.id}`)}
+                        sx={{ borderColor: "rgba(6, 182, 212, 0.35)", color: "#06B6D4", textTransform: "none", borderRadius: "8px", fontWeight: 700 }}
+                      >
+                        Open Test Editor
+                      </Button>
                       <Button variant="outlined" size="small" onClick={() => navigate("/evaluation")} sx={{ borderColor: "rgba(255,255,255,0.15)", color: "#fff", textTransform: "none", borderRadius: "8px" }}>
                         View Student Results
                       </Button>
@@ -681,8 +682,8 @@ export default function QuestionBank() {
         <Box sx={{ maxWidth: 800, mx: "auto", mt: 4 }}>
           <Card sx={{ p: 6, borderRadius: "24px", bgcolor: "rgba(255,255,255,0.02)", border: "1px solid rgba(0, 221, 179, 0.2)", textAlign: 'center' }}>
             <Avatar sx={{ width: 80, height: 80, bgcolor: "rgba(0, 221, 179, 0.1)", mx: 'auto', mb: 3 }}><Calendar size={40} color="#00DDB3" /></Avatar>
-            <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>Set Exam Live</Typography>
-            <Typography variant="body1" sx={{ color: "rgba(255,255,255,0.5)", mb: 4 }}>Logged in as: <b>{profile?.name}</b></Typography>
+            <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>Continue in Test Wizard</Typography>
+            <Typography variant="body1" sx={{ color: "rgba(255,255,255,0.5)", mb: 4 }}>The wizard handles final scheduling and publishing for the mapped course. Logged in as: <b>{profile?.name}</b></Typography>
 
             <Grid container spacing={4} sx={{ mt: 2, textAlign: "left" }}>
               <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth type="date" label="Execution Date" value={schedulingData.date} onChange={(e) => setSchedulingData({...schedulingData, date: e.target.value})} InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
@@ -692,10 +693,10 @@ export default function QuestionBank() {
             </Grid>
 
             <Button fullWidth variant="contained" onClick={handleDeployExam} disabled={isDeploying || officialBank.length === 0 || !selectedCourseId} sx={{ mt: 6, py: 2.5, background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000", fontWeight: 900, fontSize: "1.1rem", borderRadius: "12px", textTransform: "none" }}>
-              {isDeploying ? "Deploying Assessment..." : "Finalize & Deploy to Students"}
+              {isDeploying ? "Opening Wizard..." : "Continue to Test Creation Wizard"}
             </Button>
             {(!selectedCourseId) && <Typography variant="caption" color="error" sx={{ display: "block", mt: 2, fontWeight: 600 }}>Error: No course mapped to this account. Cannot deploy.</Typography>}
-            {(officialBank.length === 0 && selectedCourseId) && <Typography variant="caption" color="error" sx={{ display: "block", mt: 2, fontWeight: 600 }}>Cannot deploy an empty exam bank. Return to Creation Workspace.</Typography>}
+            {(officialBank.length === 0 && selectedCourseId) && <Typography variant="caption" color="error" sx={{ display: "block", mt: 2, fontWeight: 600 }}>Cannot continue with an empty exam bank. Return to Creation Workspace.</Typography>}
           </Card>
         </Box>
       )}

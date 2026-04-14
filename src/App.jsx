@@ -7,7 +7,11 @@ import {
 import { ThemeProvider, Box, CssBaseline, GlobalStyles } from "@mui/material";
 import theme from "./theme";
 import { AuthProvider } from "./contexts/AuthContext";
-import { AdminRoute, TeacherRoute, StudentRoute } from "./components/ProtectedRoute";
+import {
+  AdminRoute,
+  TeacherRoute,
+  StudentRoute,
+} from "./components/ProtectedRoute";
 
 // Components
 import Sidebar from "./components/Sidebar";
@@ -15,7 +19,7 @@ import AdminSidebar from "./components/AdminSidebar";
 import StudentSidebar from "./components/StudentSidebar";
 
 // Pages
-import Dashboard from "./pages/Dashboard";
+import TeacherDashboard from "./pages/TeacherDashboard";
 import QuestionBank from "./pages/QuestionBank";
 import LiveMonitoring from "./components/LiveMonitoring";
 import LandingPage from "./pages/LandingPage";
@@ -36,6 +40,8 @@ import StudentDashboard from "./pages/StudentDashboard";
 import StudentResults from "./pages/StudentResults";
 import ResultsPage from "./pages/ResultsPage";
 import StudentExamResults from "./pages/StudentExamResults";
+import TestCreationWizard from "./pages/TestCreationWizard";
+import TestEditor from "./pages/TestEditor";
 
 function App() {
   return (
@@ -60,7 +66,10 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
-            <Route path="/exam-results/:attemptId" element={<StudentExamResults />} />
+            <Route
+              path="/exam-results/:attemptId"
+              element={<StudentExamResults />}
+            />
 
             {/* Protected Teacher Routes */}
             <Route
@@ -80,10 +89,18 @@ function App() {
                       }}
                     >
                       <Routes>
-                        <Route path="dashboard" element={<Dashboard />} />
+                        <Route path="dashboard" element={<TeacherDashboard />} />
                         <Route
                           path="question-bank"
                           element={<QuestionBank />}
+                        />
+                        <Route
+                          path="test-creation/:testId?"
+                          element={<TestCreationWizard />}
+                        />
+                        <Route
+                          path="test-editor/:testId?"
+                          element={<TestEditor />}
                         />
                         <Route
                           path="live-monitoring"
@@ -163,18 +180,27 @@ function App() {
                       component="main"
                       sx={{
                         flex: 1,
-                        minWidth: 0,        // ← prevents flex overflow
+                        minWidth: 0, // ← prevents flex overflow
                         p: 3,
                         // NO overflowY: "auto" — let the PAGE scroll, not this box
                         // NO minHeight: "100vh" — not needed, flex handles it
                       }}
                     >
                       <Routes>
-                        <Route path="dashboard" element={<StudentDashboard />} />
+                        <Route
+                          path="dashboard"
+                          element={<StudentDashboard />}
+                        />
 
                         <Route path="results" element={<StudentResults />} />
-                        <Route path="results/:attemptId" element={<ResultsPage />} />
-                        <Route path="" element={<Navigate to="dashboard" replace />} />
+                        <Route
+                          path="results/:attemptId"
+                          element={<ResultsPage />}
+                        />
+                        <Route
+                          path=""
+                          element={<Navigate to="dashboard" replace />}
+                        />
                       </Routes>
                     </Box>
                   </Box>

@@ -29,8 +29,6 @@ import {
 } from "@mui/material";
 import {
   Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
   PlayArrow as PlayArrowIcon,
   Schedule as ScheduleIcon,
   CheckCircle as CheckCircleIcon,
@@ -44,7 +42,6 @@ import StatCard from "../components/StatCard";
 import { getCourseQuestions } from "../api/questionApi";
 import {
   getAllTests,
-  deleteTest,
   getTestsByTeacher,
   publishTest,
   unpublishTest,
@@ -52,15 +49,16 @@ import {
 } from "../api/testApi";
 import {
   getAllTemplates,
-  deleteTemplate,
   getActiveTemplates,
   createTemplate
 } from "../api/templateApi";
 import { getAllCourses } from "../api/courseApi";
 import { getAllStudents } from "../api/studentApi";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function TeacherDashboard() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [courses, setCourses] = useState([]);
   const [tests, setTests] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -77,9 +75,23 @@ export default function TeacherDashboard() {
   const [courseQuestions, setCourseQuestions] = useState([]);
   const [courseDrillDownLoading, setCourseDrillDownLoading] = useState(false);
 
+  const normalizeCourseId = (value) => (value == null ? "" : String(value));
+
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const assignedCourseId = normalizeCourseId(profile?.course_id);
+        if (!assignedCourseId) {
+          setCourses([]);
+          setTests([]);
+          setTemplates([]);
+          setStudents([]);
+          setSelectedCourse("");
+          setSelectedCourseForDetails(null);
+          setError("No assigned course found for your teacher profile.");
+          return;
+        }
+
         // Get all data from database
         const [testsData, templatesData, coursesData, studentsData] = await Promise.all([
           getAllTests(),
@@ -88,11 +100,48 @@ export default function TeacherDashboard() {
           getAllStudents()
         ]);
 
-        setTests(testsData);
-        setTemplates(templatesData);
-        setCourses(coursesData);
-        setStudents(studentsData);
-        setSelectedCourseForDetails(testsData[0]?.course_id || null);
+        const scopedCourses = (coursesData || []).filter(
+          (course) => normalizeCourseId(course.id) === assignedCourseId
+        );
+        const scopedPublishedTests = (testsData || [])
+          .filter((test) => normalizeCourseId(test.courseId || test.course_id) === assignedCourseId)
+          .filter((test) => {
+            const status = String(test.status || "").toLowerCase();
+            const isPublished = test.is_published === true || test.isPublished === true || status === "published";
+            return isPublished && status !== "scheduled";
+          });
+
+        // Keep only one row per test title to avoid draft/publish duplicates in UI.
+        const byName = new Map();
+        scopedPublishedTests.forEach((test) => {
+          const key = String(test.name || test.title || test.id).trim().toLowerCase();
+          const existing = byName.get(key);
+          if (!existing) {
+            byName.set(key, test);
+            return;
+          }
+
+          const testTs = new Date(test.updated_at || test.created_at || 0).getTime();
+          const existingTs = new Date(existing.updated_at || existing.created_at || 0).getTime();
+          if (testTs >= existingTs) {
+            byName.set(key, test);
+          }
+        });
+
+        const scopedTests = Array.from(byName.values());
+        const scopedTemplates = (templatesData || []).filter(
+          (template) => normalizeCourseId(template.courseId || template.course_id) === assignedCourseId
+        );
+        const scopedStudents = (studentsData || []).filter(
+          (student) => normalizeCourseId(student.courseId || student.course_id) === assignedCourseId
+        );
+
+        setTests(scopedTests);
+        setTemplates(scopedTemplates);
+        setCourses(scopedCourses);
+        setStudents(scopedStudents);
+        setSelectedCourse(assignedCourseId);
+        setSelectedCourseForDetails(null);
       } catch (error) {
         console.error('Error loading dashboard:', error);
         setError('Failed to load dashboard data');
@@ -102,7 +151,7 @@ export default function TeacherDashboard() {
     };
 
     fetchData();
-  }, []);
+  }, [profile?.course_id]);
 
   const handleOpenDialog = (type) => {
     setDialogType(type);
@@ -185,32 +234,6 @@ export default function TeacherDashboard() {
     }
   };
 
-  const handleDeleteTest = async (testId) => {
-    try {
-      await deleteTest(testId);
-      setTests((prev) => prev.filter((t) => t.id !== testId));
-      setSuccess("Test deleted successfully!");
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (error) {
-      const errorMessage = error.message || error.error || "Failed to delete test";
-      setError(errorMessage);
-      console.error('Delete test error:', error);
-    }
-  };
-
-  const handleDeleteTemplate = async (templateId) => {
-    try {
-      await deleteTemplate(templateId);
-      setTemplates((prev) => prev.filter((t) => t.id !== templateId));
-      setSuccess("Template deleted successfully!");
-      setTimeout(() => setSuccess(""), 3000);
-    } catch (error) {
-      const errorMessage = error.message || error.error || "Failed to delete template";
-      setError(errorMessage);
-      console.error('Delete template error:', error);
-    }
-  };
-
   const getStatusColor = (status) => {
     switch (status) {
       case "published":
@@ -283,9 +306,7 @@ export default function TeacherDashboard() {
           <Typography variant="h2" sx={{
             fontWeight: 900,
             mb: 1,
-            background: "linear-gradient(to right, #fff 30%, rgba(255,255,255,0.4) 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent"
+            color: "#fff"
           }}>
             Dashboard
           </Typography>
@@ -582,7 +603,6 @@ export default function TeacherDashboard() {
                       <TableCell sx={{ fontWeight: 900, borderBottom: "none" }}>ALLOCATED COURSE</TableCell>
                       <TableCell sx={{ fontWeight: 900, borderBottom: "none" }}>LITMUS STATUS</TableCell>
                       <TableCell sx={{ fontWeight: 900, borderBottom: "none", textAlign: "center" }}>METRICS</TableCell>
-                      <TableCell sx={{ fontWeight: 900, borderBottom: "none", textAlign: "right" }}>CONTROL</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -622,22 +642,6 @@ export default function TeacherDashboard() {
                               <Typography sx={{ fontWeight: 900 }}>{test.studentCount || 0}</Typography>
                               <Typography variant="caption" sx={{ color: "text.secondary" }}>ST</Typography>
                             </Box>
-                          </Box>
-                        </TableCell>
-                        <TableCell sx={{ borderBottom: "none", textAlign: "right" }}>
-                          <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
-                            <Button
-                              onClick={() => navigate(`/teacher/test-creation/${test.id}`)}
-                              sx={{ minWidth: 40, width: 40, height: 40, borderRadius: "12px", p: 0, color: "#00DDB3", "&:hover": { bgcolor: "rgba(0,221,179,0.1)" } }}
-                            >
-                              <EditIcon fontSize="small" />
-                            </Button>
-                            <Button
-                              onClick={() => handleDeleteTest(test.id)}
-                              sx={{ minWidth: 40, width: 40, height: 40, borderRadius: "12px", p: 0, color: "#F59E0B", "&:hover": { bgcolor: "rgba(245,158,11,0.1)" } }}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </Button>
                           </Box>
                         </TableCell>
                       </TableRow>
@@ -690,22 +694,9 @@ export default function TeacherDashboard() {
                           </Grid>
                         </Grid>
 
-                        <Box sx={{ display: "flex", gap: 1, mt: 'auto' }}>
-                          <Button
-                            fullWidth
-                            variant="outlined"
-                            onClick={() => navigate(`/teacher/template-builder/${template.id}`)}
-                            sx={{ borderRadius: "12px", color: "#00DDB3", borderColor: "rgba(0,221,179,0.3)" }}
-                          >
-                            EDIT
-                          </Button>
-                          <Button
-                            onClick={() => handleDeleteTemplate(template.id)}
-                            sx={{ minWidth: 48, borderRadius: "12px", color: "#F59E0B", border: "1px solid rgba(245,158,11,0.1)" }}
-                          >
-                            <DeleteIcon />
-                          </Button>
-                        </Box>
+                        <Typography variant="caption" sx={{ mt: 'auto', color: "rgba(255,255,255,0.35)", fontWeight: 700 }}>
+                          Read-only template view
+                        </Typography>
                       </CardContent>
                     </Card>
                   </Grid>
