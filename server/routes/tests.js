@@ -10,6 +10,102 @@ const testService = new TestCreationService();
 // Set up Multer for file uploads
 const upload = multer({ storage: multer.memoryStorage() });
 
+async function syncTestSchedule(testId, startTime, endTime) {
+  const hasSchedule = Boolean(startTime) && Boolean(endTime);
+
+  const { error: clearError } = await supabase
+    .from('test_schedules')
+    .delete()
+    .eq('test_id', testId);
+
+  if (clearError) throw clearError;
+
+  if (!hasSchedule) return;
+
+  // Ensure times are ISO strings (not Date objects)
+  // This prevents Supabase from applying timezone conversions
+  const startIso = typeof startTime === 'string' ? startTime : new Date(startTime).toISOString();
+  const endIso = typeof endTime === 'string' ? endTime : new Date(endTime).toISOString();
+
+  const { error: insertError } = await supabase
+    .from('test_schedules')
+    .insert({
+      test_id: testId,
+      availability_start: startIso,
+      availability_end: endIso,
+      time_zone: 'UTC',
+      is_active: true,
+    });
+
+  if (insertError) throw insertError;
+}
+
+async function getTemplateConstraints(templateId) {
+  if (!templateId) return null;
+
+  const { data, error } = await supabase
+    .from('templates')
+    .select('id, total_questions, marks_per_question, duration_minutes')
+    .eq('id', templateId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+function normalizeScheduleWindow(startLike, endLike, durationMinutes) {
+  const start = startLike ? new Date(startLike) : null;
+  const end = endLike ? new Date(endLike) : null;
+  const duration = Math.max(Number(durationMinutes ?? 0), 0);
+
+  if (!start || Number.isNaN(start.getTime())) {
+    return {
+      startIso: null,
+      endIso: null,
+    };
+  }
+
+  if (end && !Number.isNaN(end.getTime()) && end > start) {
+    return {
+      startIso: start.toISOString(),
+      endIso: end.toISOString(),
+    };
+  }
+
+  if (duration > 0) {
+    const derivedEnd = new Date(start.getTime() + duration * 60 * 1000);
+    return {
+      startIso: start.toISOString(),
+      endIso: derivedEnd.toISOString(),
+    };
+  }
+
+  return {
+    startIso: start.toISOString(),
+    endIso: null,
+  };
+}
+
+async function recalculateTotalMarks(testId) {
+  const { data: rows, error } = await supabase
+    .from('test_questions')
+    .select('marks')
+    .eq('test_id', testId);
+
+  if (error) throw error;
+
+  const totalMarks = (rows || []).reduce((sum, row) => sum + Number(row.marks ?? 0), 0);
+
+  const { error: updateError } = await supabase
+    .from('tests')
+    .update({ total_marks: totalMarks })
+    .eq('id', testId);
+
+  if (updateError) throw updateError;
+
+  return totalMarks;
+}
+
 /**
  * POST /api/tests/generate-questions
  * Generate questions using Factory Pattern
@@ -87,12 +183,29 @@ router.post('/', authenticateToken, requireRole('teacher'), async (req, res) => 
       template_id: template_id || templateId,
       start_time: start_time || startTime,
       end_time: end_time || endTime,
-      total_marks: 0,
       // Default to true if not provided as per user requirements
       is_published: isPublished !== undefined ? isPublished : (is_published !== undefined ? is_published : true),
       created_by: req.user.id,
       created_at: new Date().toISOString()
     };
+
+    const templateConstraints = await getTemplateConstraints(normalizedData.template_id);
+    if (templateConstraints?.total_questions && Array.isArray(questionIds) && questionIds.length > templateConstraints.total_questions) {
+      return res.status(400).json({
+        error: `Template allows only ${templateConstraints.total_questions} questions, but ${questionIds.length} were provided.`,
+      });
+    }
+
+    const normalizedWindow = normalizeScheduleWindow(
+      normalizedData.start_time,
+      normalizedData.end_time,
+      templateConstraints?.duration_minutes,
+    );
+    normalizedData.start_time = normalizedWindow.startIso;
+    normalizedData.end_time = normalizedWindow.endIso;
+
+    const questionMarkValue = Number(templateConstraints?.marks_per_question ?? 1);
+    normalizedData.total_marks = Array.isArray(questionIds) ? questionIds.length * questionMarkValue : 0;
 
     console.log(`[POST] Creating new test: ${name}. Payload:`, {
       ...normalizedData,
@@ -114,7 +227,8 @@ router.post('/', authenticateToken, requireRole('teacher'), async (req, res) => 
       console.log(`Saving ${questionIds.length} questions for new test: ${testData.id}`);
       const associations = questionIds.map(qId => ({
         test_id: testData.id,
-        question_id: qId
+        question_id: qId,
+        marks: questionMarkValue,
       }));
 
       const { error: assocError } = await supabase
@@ -126,6 +240,10 @@ router.post('/', authenticateToken, requireRole('teacher'), async (req, res) => 
         throw assocError;
       }
     }
+
+    await recalculateTotalMarks(testData.id);
+
+    await syncTestSchedule(testData.id, normalizedData.start_time, normalizedData.end_time);
 
     res.status(201).json(testData);
   } catch (error) {
@@ -182,14 +300,52 @@ router.get('/', async (req, res) => {
       return acc;
     }, {});
 
+    const testIds = (tests || []).map((t) => t.id);
+    const { data: schedules, error: schedulesError } = await supabase
+      .from('test_schedules')
+      .select('test_id, availability_start, availability_end, is_active')
+      .in('test_id', testIds)
+      .eq('is_active', true);
+
+    if (schedulesError) throw schedulesError;
+
+    const scheduleMap = (schedules || []).reduce((acc, row) => {
+      const existing = acc[row.test_id];
+      if (!existing) {
+        acc[row.test_id] = row;
+        return acc;
+      }
+
+      const existingStart = existing.availability_start ? new Date(existing.availability_start).getTime() : 0;
+      const rowStart = row.availability_start ? new Date(row.availability_start).getTime() : 0;
+      if (rowStart >= existingStart) {
+        acc[row.test_id] = row;
+      }
+      return acc;
+    }, {});
+
     // Map the data for the frontend
     const mappedData = tests.map(test => {
       let status = 'draft';
       const now = new Date();
+      const schedule = scheduleMap[test.id];
+      const effectiveStart = schedule ? schedule.availability_start : test.start_time;
+      const effectiveEnd = schedule ? schedule.availability_end : test.end_time;
+      const startDate = effectiveStart ? new Date(effectiveStart) : null;
+      const endDate = effectiveEnd ? new Date(effectiveEnd) : null;
+      const hasValidWindow =
+        startDate &&
+        endDate &&
+        !Number.isNaN(startDate.getTime()) &&
+        !Number.isNaN(endDate.getTime()) &&
+        endDate > startDate;
+
       if (test.is_published) {
-        if (test.start_time && new Date(test.start_time) > now) {
+        if (!hasValidWindow) {
           status = 'scheduled';
-        } else if (test.end_time && new Date(test.end_time) < now) {
+        } else if (startDate > now) {
+          status = 'scheduled';
+        } else if (endDate < now) {
           status = 'completed';
         } else {
           status = 'published';
@@ -236,13 +392,35 @@ router.get('/:id', async (req, res) => {
       .select('*', { count: 'exact', head: true })
       .eq('test_id', data.id);
 
+    const { data: scheduleRow } = await supabase
+      .from('test_schedules')
+      .select('availability_start, availability_end')
+      .eq('test_id', data.id)
+      .eq('is_active', true)
+      .order('availability_start', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     // Calculate status
     let status = 'draft';
     const now = new Date();
+    const effectiveStart = scheduleRow ? scheduleRow.availability_start : data.start_time;
+    const effectiveEnd = scheduleRow ? scheduleRow.availability_end : data.end_time;
+    const startDate = effectiveStart ? new Date(effectiveStart) : null;
+    const endDate = effectiveEnd ? new Date(effectiveEnd) : null;
+    const hasValidWindow =
+      startDate &&
+      endDate &&
+      !Number.isNaN(startDate.getTime()) &&
+      !Number.isNaN(endDate.getTime()) &&
+      endDate > startDate;
+
     if (data.is_published) {
-      if (data.start_time && new Date(data.start_time) > now) {
+      if (!hasValidWindow) {
         status = 'scheduled';
-      } else if (data.end_time && new Date(data.end_time) < now) {
+      } else if (startDate > now) {
+        status = 'scheduled';
+      } else if (endDate < now) {
         status = 'completed';
       } else {
         status = 'published';
@@ -289,29 +467,96 @@ router.put('/:id', async (req, res) => {
       questionIds
     } = req.body;
 
-    // Use either case format to be resilient
-    const normalizedData = {
-      name,
-      is_published: isPublished !== undefined ? isPublished : is_published,
-      course_id: course_id || courseId,
-      template_id: template_id || templateId,
-      start_time: startTime,
-      end_time: endTime
-    };
+    const { data: existingTest, error: existingErr } = await supabase
+      .from('tests')
+      .select('id, name, is_published, course_id, template_id, start_time, end_time')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (existingErr || !existingTest) {
+      return res.status(404).json({ error: existingErr?.message || 'Test not found' });
+    }
+
+    const hasName = name !== undefined;
+    const hasPublish = isPublished !== undefined || is_published !== undefined;
+    const hasCourse = course_id !== undefined || courseId !== undefined;
+    const hasTemplate = template_id !== undefined || templateId !== undefined;
+    const hasStart = startTime !== undefined || req.body.start_time !== undefined;
+    const hasEnd = endTime !== undefined || req.body.end_time !== undefined;
+
+    const resolvedTemplateId = hasTemplate
+      ? (template_id ?? templateId)
+      : existingTest.template_id;
+    const resolvedStart = hasStart
+      ? (startTime ?? req.body.start_time)
+      : existingTest.start_time;
+    const resolvedEnd = hasEnd
+      ? (endTime ?? req.body.end_time)
+      : existingTest.end_time;
+
+    const normalizedData = {};
+    if (hasName) normalizedData.name = name;
+    if (hasPublish) normalizedData.is_published = isPublished !== undefined ? isPublished : is_published;
+    if (hasCourse) normalizedData.course_id = course_id ?? courseId;
+    if (hasTemplate) normalizedData.template_id = template_id ?? templateId;
+    if (hasStart) normalizedData.start_time = startTime ?? req.body.start_time;
+    if (hasEnd) normalizedData.end_time = endTime ?? req.body.end_time;
+
+    const templateConstraints = await getTemplateConstraints(resolvedTemplateId);
+    if (templateConstraints?.total_questions && Array.isArray(questionIds) && questionIds.length > templateConstraints.total_questions) {
+      return res.status(400).json({
+        error: `Template allows only ${templateConstraints.total_questions} questions, but ${questionIds.length} were provided.`,
+      });
+    }
+
+    let finalStart = resolvedStart;
+    let finalEnd = resolvedEnd;
+    if (hasStart || hasEnd || hasTemplate || hasPublish) {
+      const resolvedWindow = normalizeScheduleWindow(
+        resolvedStart,
+        resolvedEnd,
+        templateConstraints?.duration_minutes,
+      );
+      finalStart = resolvedWindow.startIso;
+      finalEnd = resolvedWindow.endIso;
+
+      if (hasStart || hasTemplate || hasPublish) {
+        normalizedData.start_time = finalStart;
+      }
+      if (hasEnd || hasTemplate || hasPublish) {
+        normalizedData.end_time = finalEnd;
+      }
+    }
+
+    const targetPublishedState = hasPublish
+      ? Boolean(isPublished !== undefined ? isPublished : is_published)
+      : Boolean(existingTest.is_published);
+
+    if (targetPublishedState && (!finalStart || !finalEnd)) {
+      return res.status(400).json({
+        error: 'Published tests must have both start and end time. Set schedule in UTC before publishing.',
+      });
+    }
+
+    const questionMarkValue = Number(templateConstraints?.marks_per_question ?? 1);
 
     console.log(`[PUT] Updating test ${req.params.id}. Payload:`, {
       ...normalizedData,
       questionCount: questionIds?.length
     });
 
-    const { data: testData, error: updateError } = await supabase
-      .from('tests')
-      .update(normalizedData)
-      .eq('id', req.params.id)
-      .select()
-      .single();
+    let testData = existingTest;
+    if (Object.keys(normalizedData).length > 0) {
+      const { data: updatedTest, error: updateError } = await supabase
+        .from('tests')
+        .update(normalizedData)
+        .eq('id', req.params.id)
+        .select()
+        .single();
 
-    if (updateError) throw updateError;
+      if (updateError) throw updateError;
+      testData = updatedTest;
+    }
 
     // Update questions if provided
     if (questionIds && Array.isArray(questionIds)) {
@@ -324,7 +569,8 @@ router.put('/:id', async (req, res) => {
       if (questionIds.length > 0) {
         const associations = questionIds.map(qId => ({
           test_id: req.params.id,
-          question_id: qId
+          question_id: qId,
+          marks: questionMarkValue,
         }));
         const { error: assocError } = await supabase.from('test_questions').insert(associations);
         if (assocError) {
@@ -332,7 +578,17 @@ router.put('/:id', async (req, res) => {
           throw assocError;
         }
       }
+    } else if (resolvedTemplateId) {
+      // Keep per-question marks consistent with the active template configuration.
+      await supabase
+        .from('test_questions')
+        .update({ marks: questionMarkValue })
+        .eq('test_id', req.params.id);
     }
+
+    await recalculateTotalMarks(req.params.id);
+
+    await syncTestSchedule(req.params.id, finalStart, finalEnd);
 
     res.json(testData);
   } catch (error) {
@@ -386,15 +642,46 @@ router.delete('/:id/questions', (req, res) => {
  * POST /api/tests/:id/schedule
  * Schedule a test
  */
-router.post('/:id/schedule', (req, res) => {
+router.post('/:id/schedule', async (req, res) => {
   try {
     const { startTime, endTime } = req.body;
-    const test = testService.scheduleTest(
-      req.params.id,
-      new Date(startTime),
-      new Date(endTime)
+
+    const { data: existing, error: existingErr } = await supabase
+      .from('tests')
+      .select('id, template_id, start_time, end_time')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (existingErr || !existing) {
+      return res.status(404).json({ error: existingErr?.message || 'Test not found' });
+    }
+
+    const templateConstraints = await getTemplateConstraints(existing.template_id);
+    const normalized = normalizeScheduleWindow(
+      startTime ?? existing.start_time,
+      endTime ?? existing.end_time,
+      templateConstraints?.duration_minutes,
     );
-    res.json(test);
+
+    if (!normalized.startIso || !normalized.endIso) {
+      return res.status(400).json({
+        error: 'Schedule requires valid start and end times (UTC).',
+      });
+    }
+
+    const { data: updatedTest, error: updateError } = await supabase
+      .from('tests')
+      .update({ start_time: normalized.startIso, end_time: normalized.endIso })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    await syncTestSchedule(req.params.id, normalized.startIso, normalized.endIso);
+    await recalculateTotalMarks(req.params.id);
+
+    res.json(updatedTest);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -404,10 +691,47 @@ router.post('/:id/schedule', (req, res) => {
  * POST /api/tests/:id/publish
  * Publish a test
  */
-router.post('/:id/publish', (req, res) => {
+router.post('/:id/publish', async (req, res) => {
   try {
-    const test = testService.publishTest(req.params.id);
-    res.json(test);
+    const { data: existing, error: existingErr } = await supabase
+      .from('tests')
+      .select('id, template_id, start_time, end_time')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (existingErr || !existing) {
+      return res.status(404).json({ error: existingErr?.message || 'Test not found' });
+    }
+
+    const templateConstraints = await getTemplateConstraints(existing.template_id);
+    const normalized = normalizeScheduleWindow(
+      existing.start_time,
+      existing.end_time,
+      templateConstraints?.duration_minutes,
+    );
+
+    if (!normalized.startIso || !normalized.endIso) {
+      return res.status(400).json({
+        error: 'Cannot publish without schedule. Set start/end UTC in wizard first.',
+      });
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('tests')
+      .update({
+        is_published: true,
+        start_time: normalized.startIso,
+        end_time: normalized.endIso,
+      })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    await syncTestSchedule(req.params.id, normalized.startIso, normalized.endIso);
+
+    res.json(updated);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -417,10 +741,23 @@ router.post('/:id/publish', (req, res) => {
  * POST /api/tests/:id/unpublish
  * Unpublish a test
  */
-router.post('/:id/unpublish', (req, res) => {
+router.post('/:id/unpublish', async (req, res) => {
   try {
-    const test = testService.unpublishTest(req.params.id);
-    res.json(test);
+    const { data: updated, error: updateErr } = await supabase
+      .from('tests')
+      .update({ is_published: false })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    await supabase
+      .from('test_schedules')
+      .update({ is_active: false })
+      .eq('test_id', req.params.id);
+
+    res.json(updated);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

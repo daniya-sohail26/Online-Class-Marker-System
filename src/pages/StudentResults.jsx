@@ -55,7 +55,7 @@ export default function StudentResults() {
           minHeight: "60vh",
         }}
       >
-        <CircularProgress sx={{ color: "#A855F7" }} />
+        <CircularProgress sx={{ color: "#00DDB3" }} />
       </Box>
     );
   }
@@ -68,7 +68,7 @@ export default function StudentResults() {
           fontWeight: 800,
           color: "#fff",
           mb: 3,
-          background: "linear-gradient(135deg, #A855F7, #7C3AED)",
+          background: "linear-gradient(135deg, #00DDB3, #06B6D4)",
           backgroundClip: "text",
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
@@ -125,7 +125,7 @@ export default function StudentResults() {
                         cursor: "pointer",
                         transition: "background-color 0.2s",
                         "&:hover": {
-                          bgcolor: "rgba(168, 85, 247, 0.1)",
+                          bgcolor: "rgba(6, 182, 212, 0.1)",
                         },
                       }}
                     >

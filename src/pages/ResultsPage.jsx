@@ -4,7 +4,7 @@ import {
   Divider, Chip, Grid, Paper, Container,
 } from "@mui/material";
 import { useParams, useNavigate } from "react-router-dom";
-import { supabase } from "../../server/config/supabaseClient";  // ← direct Supabase
+import { fetchAttemptResults } from "../api/studentApi";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CancelIcon from "@mui/icons-material/Cancel";
 
@@ -14,6 +14,7 @@ export default function ResultsPage() {
 
   const [loading, setLoading]         = useState(true);
   const [showResults, setShowResults] = useState(false);
+  const [releaseAt, setReleaseAt]     = useState(null);
   const [attempt, setAttempt]         = useState(null);
   const [answers, setAnswers]         = useState([]);
   const [error, setError]             = useState(null);
@@ -29,66 +30,22 @@ export default function ResultsPage() {
 
   const loadResults = async () => {
     try {
-      // 1. Fetch attempt
-      const { data: attemptRow, error: attemptErr } = await supabase
-        .from("attempts")
-        .select("id, score, test_id, passed")
-        .eq("id", attemptId)
-        .single();
+      const payload = await fetchAttemptResults(attemptId);
+      const attemptRow = payload?.attempt || null;
+      const detailReleased = Boolean(payload?.detailed_results_released);
+      const releaseAtIso = payload?.results_release_at || null;
 
-      if (attemptErr) throw attemptErr;
-
-      // 2. Fetch test (Column name is total_marks)
-      const { data: test, error: testErr } = await supabase
-        .from("tests")
-        .select("name, template_id, total_marks") 
-        .eq("id", attemptRow.test_id)
-        .single();
-
-      if (testErr) throw testErr;
-
-      // 3. Get show_results_immediately from template
-      let showImmediately = false;
-      if (test?.template_id) {
-        const { data: template } = await supabase
-          .from("templates")
-          .select("show_results_immediately")
-          .eq("id", test.template_id)
-          .single();
-        showImmediately = template?.show_results_immediately ?? false;
+      if (!attemptRow) {
+        throw new Error("Attempt data not found");
       }
 
-      // ✅ FIX: Ek hi baar setAttempt karein taaki data override na ho
-      setAttempt({ 
-        ...attemptRow, 
-        test_name: test?.name ?? "Assessment",
-        max_score: test?.total_marks ?? 0 // Database column total_marks use ho raha hai
-      });
-      
-      setShowResults(showImmediately);
-
-      // 4. Fetch answers logic (Same as before)
-      if (showImmediately) {
-        const { data: answerRows, error: answersErr } = await supabase
-          .from("answers")
-          .select(`
-            id, selected_option, is_correct, marks_awarded,
-            questions (question_text, option_a, option_b, option_c, option_d, correct_option, explanation)
-          `)
-          .eq("attempt_id", attemptId);
-
-        if (answersErr) throw answersErr;
-
-        setAnswers(
-          (answerRows ?? []).map((a) => ({
-            ...a,
-            question: a.questions ?? null,
-          }))
-        );
-      }
+      setAttempt(attemptRow);
+      setShowResults(detailReleased);
+      setReleaseAt(releaseAtIso ? new Date(releaseAtIso) : null);
+      setAnswers(Array.isArray(payload?.answers) ? payload.answers : []);
     } catch (err) {
       console.error("[Results] load error:", err);
-      setError(err.message);
+      setError(err?.response?.data?.error || err.message);
     } finally {
       setLoading(false);
     }
@@ -113,7 +70,7 @@ export default function ResultsPage() {
   if (loading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
-        <CircularProgress sx={{ color: "#A855F7" }} />
+        <CircularProgress sx={{ color: "#00DDB3" }} />
       </Box>
     );
   }
@@ -127,7 +84,7 @@ export default function ResultsPage() {
           <Typography variant="h5" sx={{ fontWeight: 800, color: "#fff", mb: 2 }}>Error Loading Results</Typography>
           <Typography sx={{ color: "rgba(255,255,255,0.6)", mb: 4 }}>{error}</Typography>
           <Button variant="contained" onClick={() => navigate("/student/dashboard")}
-            sx={{ background: "linear-gradient(135deg, #A855F7, #7C3AED)", textTransform: "none", fontWeight: 600 }}>
+            sx={{ background: "linear-gradient(135deg, #00DDB3, #06B6D4)", textTransform: "none", fontWeight: 600 }}>
             Back to Dashboard
           </Button>
         </Paper>
@@ -135,18 +92,22 @@ export default function ResultsPage() {
     );
   }
 
-  // ── Results hidden ────────────────────────────────────────────────────────
+  // ── Results hidden (score-only until end time) ──────────────────────────
   if (!showResults) {
     return (
       <Container maxWidth="sm" sx={{ py: 6 }}>
         <Paper elevation={0} sx={{ p: 4, bgcolor: "rgba(15,23,42,0.6)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "16px", textAlign: "center" }}>
           <Typography sx={{ fontSize: "48px", mb: 2, color: "#00DDB3", fontWeight: 700 }}>✓</Typography>
           <Typography variant="h5" sx={{ fontWeight: 800, color: "#fff", mb: 2 }}>Test Submitted</Typography>
+          <Typography sx={{ color: "#22D3EE", fontWeight: 700, mb: 1.2 }}>
+            Score: {attempt?.score ?? 0} / {attempt?.max_score ?? 0}
+          </Typography>
           <Typography sx={{ color: "rgba(255,255,255,0.6)", mb: 4, lineHeight: 1.6 }}>
-            Your answers have been recorded. Results will be available once the teacher reviews them.
+            Your answers are recorded. Full correct/incorrect review with explanations unlocks after the test ends.
+            {releaseAt ? ` Release time: ${releaseAt.toLocaleString()}.` : ""}
           </Typography>
           <Button variant="contained" onClick={() => navigate("/student/dashboard")}
-            sx={{ background: "linear-gradient(135deg, #A855F7, #7C3AED)", textTransform: "none", fontWeight: 600 }}>
+            sx={{ background: "linear-gradient(135deg, #00DDB3, #06B6D4)", textTransform: "none", fontWeight: 600 }}>
             Back to Dashboard
           </Button>
         </Paper>
@@ -158,7 +119,7 @@ export default function ResultsPage() {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800, color: "#fff", mb: 1, background: "linear-gradient(135deg, #A855F7, #7C3AED)", backgroundClip: "text", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+        <Typography variant="h4" sx={{ fontWeight: 800, color: "#fff", mb: 1, background: "linear-gradient(135deg, #00DDB3, #06B6D4)", backgroundClip: "text", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
           Test Results
         </Typography>
         <Typography sx={{ color: "rgba(255,255,255,0.6)" }}>
@@ -170,13 +131,13 @@ export default function ResultsPage() {
 <Grid container spacing={2} sx={{ mb: 4, display: "flex" }}>
   {[
     { 
-      label: "Total Score", // Changed from Overall Score
-      value: ` ${attempt?.max_score ?? 0}`, // Format: Obtained / Total
+      label: "Total Score",
+      value: `${attempt?.score ?? 0} / ${attempt?.max_score ?? 0}`,
       color: "#00DDB3" 
     },
-    { label: "Correct Answers",  value: correctCount,                color: "#A855F7" },
+    { label: "Correct Answers",  value: correctCount,                color: "#22D3EE" },
     { label: "Total Questions",  value: totalQuestions,              color: "#F59E0B" },
-    { label: "Score", value: attempt?.score ?? 0,       color: "#06B6D4" },
+    { label: "Marks Awarded", value: totalMarks,       color: "#06B6D4" },
     { label: "Status", value: attempt?.passed ? "Passed" : "Failed", color: attempt?.passed ? "#00DDB3" : "#EF4444" },
   ].map((stat, i) => (
     <Grid item xs={12} sm={6} sx={{ flex: 1, minWidth: 0 }} key={i}>
@@ -247,8 +208,8 @@ export default function ResultsPage() {
               )}
 
               {answer.question?.explanation && (
-                <Box sx={{ p: 2, bgcolor: "rgba(168,85,247,0.1)", border: "1px solid rgba(168,85,247,0.2)", borderRadius: "8px" }}>
-                  <Typography sx={{ color: "#A855F7", fontSize: "14px", fontWeight: 600, mb: 0.5 }}>Explanation</Typography>
+                <Box sx={{ p: 2, bgcolor: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.25)", borderRadius: "8px" }}>
+                  <Typography sx={{ color: "#22D3EE", fontSize: "14px", fontWeight: 600, mb: 0.5 }}>Explanation</Typography>
                   <Typography sx={{ color: "rgba(255,255,255,0.7)", fontSize: "14px" }}>{answer.question.explanation}</Typography>
                 </Box>
               )}
@@ -259,7 +220,7 @@ export default function ResultsPage() {
 
       <Box sx={{ mt: 6, display: "flex", gap: 2, justifyContent: "center" }}>
         <Button variant="contained" onClick={() => navigate("/student/dashboard")}
-          sx={{ background: "linear-gradient(135deg, #A855F7, #7C3AED)", textTransform: "none", px: 4 }}>
+          sx={{ background: "linear-gradient(135deg, #00DDB3, #06B6D4)", textTransform: "none", px: 4 }}>
           Back to Dashboard
         </Button>
         

@@ -61,7 +61,7 @@ router.get('/results/:attemptId', authenticateToken, async (req, res) => {
     // 1. Fetch attempt
     const { data: attempt, error: attemptErr } = await supabase
       .from('attempts')
-      .select('id, test_id, score, submitted_at, started_at, violations, student_id')
+      .select('id, test_id, score, score_percent, passed, submitted_at, started_at, violations, student_id')
       .eq('id', attemptId)
       .single();
 
@@ -72,29 +72,61 @@ router.get('/results/:attemptId', authenticateToken, async (req, res) => {
       throw attemptErr;
     }
 
-    // 2. Fetch test name + template_id
+    // 2. Fetch test context
     const { data: test, error: testErr } = await supabase
       .from('tests')
-      .select('id, name, template_id')
+      .select('id, name, template_id, end_time, total_marks')
       .eq('id', attempt.test_id)
       .single();
 
     if (testErr) throw testErr;
 
-    // 3. Fetch show_results_immediately from template
-    let showResultsImmediately = false;
+    // 2b. Load passing criteria for robust pass/fail fallback when legacy attempts have null `passed`.
+    let passingPercentage = 40;
     if (test?.template_id) {
-      const { data: template } = await supabase
+      const { data: templateCfg } = await supabase
         .from('templates')
-        .select('show_results_immediately')
+        .select('passing_percentage')
         .eq('id', test.template_id)
-        .single();
-      showResultsImmediately = template?.show_results_immediately ?? false;
+        .maybeSingle();
+      if (templateCfg?.passing_percentage != null && templateCfg.passing_percentage !== '') {
+        passingPercentage = Number(templateCfg.passing_percentage);
+      }
     }
 
-    // 4. Fetch answers with joined question details (only if results visible)
+    // 3. Derive authoritative max marks from linked questions (fallback to tests.total_marks)
+    let maxScore = Number(test?.total_marks ?? 0);
+    const { data: tqRows } = await supabase
+      .from('test_questions')
+      .select('marks')
+      .eq('test_id', attempt.test_id);
+    const summedMarks = (tqRows ?? []).reduce((sum, row) => sum + Number(row?.marks ?? 0), 0);
+    if (Number.isFinite(summedMarks) && summedMarks > 0) {
+      maxScore = summedMarks;
+    }
+
+    // 4. Resolve authoritative test end time from active schedule, fallback to tests.end_time.
+    const { data: activeSchedule } = await supabase
+      .from('test_schedules')
+      .select('availability_start, availability_end')
+      .eq('test_id', attempt.test_id)
+      .eq('is_active', true)
+      .order('availability_start', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const scheduleEnd = activeSchedule?.availability_end || null;
+    const effectiveEndRaw = scheduleEnd || test?.end_time || null;
+    const effectiveEnd = effectiveEndRaw ? new Date(effectiveEndRaw) : null;
+    const hasValidEnd = Boolean(effectiveEnd && !Number.isNaN(effectiveEnd.getTime()));
+
+    // 5. Release full details only after effective end. Early submit remains score-only.
+    const now = new Date();
+    const detailsReleased = Boolean(hasValidEnd && now >= effectiveEnd);
+
+    // 6. Fetch answers with joined question details only when details are released
     let answers = [];
-    if (showResultsImmediately) {
+    if (detailsReleased) {
       const { data: answerRows, error: answersErr } = await supabase
         .from('answers')
         .select(`
@@ -153,16 +185,29 @@ router.get('/results/:attemptId', authenticateToken, async (req, res) => {
       });
     }
 
-    // 5. Compute derived stats
+    // 7. Compute derived stats
     const correctCount  = answers.filter((a) => a.is_correct === true).length;
     const totalMarks    = answers.reduce((sum, a) => sum + (Number(a.marks_awarded) || 0), 0);
+
+    const scoreValue = Number(attempt.score ?? totalMarks ?? 0);
+    const persistedPercent = Number(attempt.score_percent);
+    const derivedPercent = maxScore > 0 ? (scoreValue / maxScore) * 100 : 0;
+    const effectivePercent = Number.isFinite(persistedPercent) ? persistedPercent : derivedPercent;
+
+    const resolvedPassed =
+      typeof attempt.passed === 'boolean'
+        ? attempt.passed
+        : Number.isFinite(effectivePercent) && effectivePercent >= passingPercentage;
 
     res.json({
       attempt: {
         id:           attempt.id,
         test_id:      attempt.test_id,
         test_name:    test?.name ?? 'Unknown Test',
-        score:        attempt.score ?? totalMarks,
+        score:        scoreValue,
+        score_percent: Number.isFinite(effectivePercent) ? Math.round(effectivePercent * 100) / 100 : null,
+        passed:       resolvedPassed,
+        max_score:    maxScore,
         submitted_at: attempt.submitted_at,
         started_at:   attempt.started_at,
         violations:   attempt.violations,
@@ -172,7 +217,8 @@ router.get('/results/:attemptId', authenticateToken, async (req, res) => {
         wrong_count:    answers.length - correctCount,
         total_answered: answers.length,
       },
-      show_results_immediately: showResultsImmediately,
+      detailed_results_released: detailsReleased,
+      results_release_at: hasValidEnd ? effectiveEnd.toISOString() : null,
       answers,
     });
   } catch (error) {

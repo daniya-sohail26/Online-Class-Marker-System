@@ -77,7 +77,15 @@ export default function Login() {
       navigate(target, { replace: true });
       return;
     }
-    // student / unknown: stay on /login (navbar "Login", sign out, switch account) — no redirect to /
+    if (role === "student") {
+      const target =
+        fromPath && fromPath.startsWith("/student")
+          ? fromPath
+          : "/student/dashboard";
+      navigate(target, { replace: true });
+      return;
+    }
+    // unknown role: keep user on login
   }, [profile?.id, profile?.role, profile?.adminPortalDenied, navigate, location.pathname, location.state?.from?.pathname]);
 
   const handleLogin = async (e) => {
@@ -120,7 +128,7 @@ export default function Login() {
       <GlobalStyles styles={{ body: { backgroundColor: "#030712" } }} />
       <Box sx={{ position: "absolute", inset: 0, opacity: 0.15, backgroundImage: `radial-gradient(circle at 2px 2px, rgba(255,255,255,0.4) 1px, transparent 0)`, backgroundSize: "40px 40px", pointerEvents: "none" }} />
       <Box sx={{ position: "absolute", width: "50vw", height: "50vw", background: "radial-gradient(circle, rgba(0, 221, 179, 0.15) 0%, transparent 60%)", top: "-10%", left: "-10%", filter: "blur(100px)", pointerEvents: "none" }} />
-      <Box sx={{ position: "absolute", width: "60vw", height: "60vw", background: "radial-gradient(circle, rgba(138, 43, 226, 0.1) 0%, transparent 60%)", bottom: "-20%", right: "-10%", filter: "blur(120px)", pointerEvents: "none" }} />
+      <Box sx={{ position: "absolute", width: "60vw", height: "60vw", background: "radial-gradient(circle, rgba(6, 182, 212, 0.12) 0%, transparent 60%)", bottom: "-20%", right: "-10%", filter: "blur(120px)", pointerEvents: "none" }} />
 
       <Container maxWidth="xs" sx={{ position: "relative", zIndex: 1 }}>
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, type: "spring" }}>
@@ -167,7 +175,7 @@ export default function Login() {
               sx={{ mb: 4, bgcolor: "rgba(0,0,0,0.4)", p: 0.5, borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)", "& .MuiToggleButton-root": { border: "none", borderRadius: "12px", color: "rgba(255,255,255,0.5)", textTransform: "none", fontWeight: 600, py: 1.5 } }}
             >
               <ToggleButton value="teacher" sx={{ "&.Mui-selected": { bgcolor: "#00DDB3", color: "#000", fontWeight: 800, "&:hover": { bgcolor: "#00DDB3" } } }}>Teacher</ToggleButton>
-              <ToggleButton value="student" sx={{ "&.Mui-selected": { bgcolor: "#A855F7", color: "#000", fontWeight: 800, "&:hover": { bgcolor: "#A855F7" } } }}>Student</ToggleButton>
+              <ToggleButton value="student" sx={{ "&.Mui-selected": { bgcolor: "#06B6D4", color: "#000", fontWeight: 800, "&:hover": { bgcolor: "#06B6D4" } } }}>Student</ToggleButton>
               <ToggleButton value="admin" sx={{ "&.Mui-selected": { bgcolor: "#06B6D4", color: "#000", fontWeight: 800, "&:hover": { bgcolor: "#06B6D4" } } }}>Admin</ToggleButton>
             </ToggleButtonGroup>
 

@@ -30,6 +30,11 @@ export default function TestEditor() {
   const [unsavedChanges, setUnsavedChanges] = useState(false);
 
   useEffect(() => {
+    if (!testId) {
+      setLoading(false);
+      return;
+    }
+
     const loadTest = async () => {
       try {
         setLoading(true);
@@ -51,9 +56,7 @@ export default function TestEditor() {
       }
     };
 
-    if (testId) {
-      loadTest();
-    }
+    loadTest();
   }, [testId]);
 
   const handleInputChange = (e) => {
@@ -99,7 +102,12 @@ export default function TestEditor() {
   if (!test) {
     return (
       <Box sx={{ p: 4 }}>
-        <Alert severity="error">Test not found</Alert>
+        <Alert severity={testId ? "error" : "info"}>
+          {testId ? "Test not found" : "No test selected. Open a test from Question Bank or Dashboard."}
+        </Alert>
+        <Button onClick={() => navigate("/teacher/question-bank") } sx={{ mt: 2, mr: 2 }}>
+          Go to Question Bank
+        </Button>
         <Button onClick={() => navigate("/teacher/dashboard")} sx={{ mt: 2 }}>
           Back to Dashboard
         </Button>

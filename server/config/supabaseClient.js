@@ -1,28 +1,26 @@
 import { createClient } from '@supabase/supabase-js';
 
-// 1. Detect environment and get variables safely
-const isBrowser = typeof window !== 'undefined';
+// 1. Determine if we are in Node.js or the Browser
+const isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
 
-const supabaseUrl = isBrowser 
-  ? import.meta.env.VITE_SUPABASE_URL 
-  : process.env.VITE_SUPABASE_URL;
+let supabaseUrl;
+let supabaseAnonKey;
 
-const supabaseAnonKey = isBrowser 
-  ? import.meta.env.VITE_SUPABASE_ANON_KEY 
-  : process.env.VITE_SUPABASE_ANON_KEY;
-
-// 2. Debugging (Optional: remove once working)
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(`❌ Supabase keys missing in ${isBrowser ? 'Browser' : 'Server'}!`);
+if (isNode) {
+  // --- BACKEND (Node.js) ---
+  // We use dynamic imports or just check process.env
+  // Note: For backend, ensure you run 'node index.js' with environment variables loaded
+  supabaseUrl = process.env.VITE_SUPABASE_URL;
+  supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+} else {
+  // --- FRONTEND (Vite/Browser) ---
+  supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 }
 
-// 3. Initialize Client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    // Only use window.localStorage if we are in a browser
-    storage: isBrowser ? window.localStorage : undefined 
-  }
-});
+// 2. Debug check
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error(`❌ Supabase keys missing! Environment: ${isNode ? 'Node.js/Server' : 'Browser/Vite'}`);
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);

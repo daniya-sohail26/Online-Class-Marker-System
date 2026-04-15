@@ -15,7 +15,7 @@ import AdminSidebar from "./components/AdminSidebar";
 import StudentSidebar from "./components/StudentSidebar";
 
 // Pages
-import Dashboard from "./pages/Dashboard";
+import TeacherDashboard from "./pages/TeacherDashboard";
 import QuestionBank from "./pages/QuestionBank";
 import LiveMonitoring from "./components/LiveMonitoring";
 import LandingPage from "./pages/LandingPage";
@@ -36,6 +36,9 @@ import StudentDashboard from "./pages/StudentDashboard";
 import StudentResults from "./pages/StudentResults";
 import ResultsPage from "./pages/ResultsPage";
 import StudentExamResults from "./pages/StudentExamResults";
+import ExaminationModule from "./pages/ExaminationModule";
+import TestCreationWizard from "./pages/TestCreationWizard";
+import TestEditor from "./pages/TestEditor";
 
 function App() {
   return (
@@ -80,10 +83,18 @@ function App() {
                       }}
                     >
                       <Routes>
-                        <Route path="dashboard" element={<Dashboard />} />
+                        <Route path="dashboard" element={<TeacherDashboard />} />
                         <Route
                           path="question-bank"
                           element={<QuestionBank />}
+                        />
+                        <Route
+                          path="test-creation/:testId?"
+                          element={<TestCreationWizard />}
+                        />
+                        <Route
+                          path="test-editor/:testId?"
+                          element={<TestEditor />}
                         />
                         <Route
                           path="live-monitoring"
@@ -157,21 +168,19 @@ function App() {
               path="/student/*"
               element={
                 <StudentRoute>
-                  <Box sx={{ display: "flex", minHeight: "100vh" }}>
+                  <Box sx={{ display: "flex", minHeight: "100vh", width: "100%" }}>
                     <StudentSidebar />
                     <Box
                       component="main"
                       sx={{
-                        flex: 1,
-                        minWidth: 0,        // ← prevents flex overflow
-                        p: 3,
-                        // NO overflowY: "auto" — let the PAGE scroll, not this box
-                        // NO minHeight: "100vh" — not needed, flex handles it
+                        flexGrow: 1,
+                        p: { xs: 2, md: 5 },
+                        overflowX: "hidden",
                       }}
                     >
                       <Routes>
                         <Route path="dashboard" element={<StudentDashboard />} />
-
+                        <Route path="exam/:testId" element={<ExaminationModule />} />
                         <Route path="results" element={<StudentResults />} />
                         <Route path="results/:attemptId" element={<ResultsPage />} />
                         <Route path="" element={<Navigate to="dashboard" replace />} />

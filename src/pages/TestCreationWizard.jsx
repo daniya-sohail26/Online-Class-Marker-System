@@ -25,26 +25,82 @@ import {
   DialogActions,
 } from '@mui/material';
 import { motion } from 'framer-motion';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Trash2, Eye, Filter, Save } from 'lucide-react';
 import { getCourseQuestions } from '../api/questionApi.js';
-import { createTest, getTestById, updateTest } from '../api/testApi.js';
+import { createTest, deleteTest, getTestById, updateTest } from '../api/testApi.js';
 import { getAllCourses } from '../api/courseApi.js';
 import { getActiveTemplates } from '../api/templateApi.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
+
+const PK_TIMEZONE = 'Asia/Karachi';
+
+function toUtcInputValue(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return '';
+
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const min = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
+function utcInputToIso(inputValue) {
+  if (!inputValue) return '';
+  const d = new Date(`${inputValue}:00Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString();
+}
+
+function formatUtcDisplay(inputValue) {
+  if (!inputValue) return '';
+  const d = new Date(`${inputValue}:00Z`);
+  if (Number.isNaN(d.getTime())) return inputValue;
+  return d.toLocaleString('en-GB', { timeZone: 'UTC', hour12: false }) + ' UTC';
+}
+
+function formatPktFromUtcInput(inputValue) {
+  if (!inputValue) return '';
+  const d = new Date(`${inputValue}:00Z`);
+  if (Number.isNaN(d.getTime())) return inputValue;
+  return d.toLocaleString('en-PK', { timeZone: PK_TIMEZONE, hour12: false });
+}
+
+function addMinutesToUtcInput(inputValue, minutes) {
+  if (!inputValue) return '';
+  const parsed = new Date(`${inputValue}:00Z`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const duration = Math.max(Number(minutes ?? 0), 0);
+  const next = new Date(parsed.getTime() + duration * 60 * 1000);
+
+  return toUtcInputValue(next.toISOString());
+}
 
 export default function TestCreationWizard() {
   const { testId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { profile } = useAuth();
   const isEditing = !!testId;
+  const prefill = location.state?.prefill || null;
+  // Track if we're editing a draft (unpublished test) vs. published test
+  const [isDraftBeingPublished, setIsDraftBeingPublished] = useState(false);
+  const [skipQuestionStep, setSkipQuestionStep] = useState(false);
   // --- STEPPER STATE ---
   const [activeStep, setActiveStep] = useState(0);
-  const steps = ['Basic Info', 'Select Questions', 'Schedule', isEditing ? 'Review & Update' : 'Review & Publish'];
+  const steps = skipQuestionStep
+    ? ['Basic Info', 'Schedule', isEditing ? 'Review & Update' : 'Review & Publish']
+    : ['Basic Info', 'Select Questions', 'Schedule', isEditing ? 'Review & Update' : 'Review & Publish'];
 
   // --- FORM STATE ---
   const [testName, setTestName] = useState('');
   const [selectedCourse, setSelectedCourse] = useState('');
   const [courses, setCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
+  const [isCourseLocked, setIsCourseLocked] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -69,6 +125,13 @@ export default function TestCreationWizard() {
   const [success, setSuccess] = useState('');
   const [previewQuestion, setPreviewQuestion] = useState(null);
 
+  const selectedTemplateObject = templates.find(template => template.id === selectedTemplate);
+  const templateQuestionLimit = Number(selectedTemplateObject?.total_questions || 0);
+  const templateDurationMinutes = Math.max(
+    Number(selectedTemplateObject?.duration ?? selectedTemplateObject?.duration_minutes ?? duration ?? 60),
+    1,
+  );
+
   // --- FETCH INITIAL DATA ---
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -92,17 +155,41 @@ export default function TestCreationWizard() {
           setSelectedQuestions(testData.questionIds || []);
           console.log("Set selectedQuestions to:", testData.questionIds);
 
+          // Track if this is a draft being published (unpublished test)
+          setIsDraftBeingPublished(testData.is_published === false);
+
           if (testData.startTime || testData.start_time) {
-            const date = new Date(testData.startTime || testData.start_time);
-            setStartTime(date.toISOString().slice(0, 16));
+            setStartTime(toUtcInputValue(testData.startTime || testData.start_time));
           }
           if (testData.endTime || testData.end_time) {
-            const date = new Date(testData.endTime || testData.end_time);
-            setEndTime(date.toISOString().slice(0, 16));
+            setEndTime(toUtcInputValue(testData.endTime || testData.end_time));
           }
-        } else if (coursesData.length > 0) {
-          // Only auto-select first course if NOT editing
-          // setSelectedCourse(coursesData[0].id); 
+
+          if (testData.is_published === false && Array.isArray(testData.questionIds) && testData.questionIds.length > 0) {
+            setSkipQuestionStep(true);
+            setActiveStep(0);
+          }
+        } else {
+          const mappedCourseId = profile?.course_id || '';
+          const prefillCourseId = prefill?.courseId || '';
+          const resolvedCourseId = prefillCourseId || mappedCourseId;
+
+          if (resolvedCourseId && coursesData.some((c) => String(c.id) === String(resolvedCourseId))) {
+            setSelectedCourse(resolvedCourseId);
+            setIsCourseLocked(true);
+          }
+
+          if (prefill?.name) setTestName(prefill.name);
+          if (prefill?.templateId) setSelectedTemplate(prefill.templateId);
+          if (Array.isArray(prefill?.questionIds) && prefill.questionIds.length > 0) {
+            setSelectedQuestions(prefill.questionIds);
+            if (prefill?.source === 'question-bank') {
+              setSkipQuestionStep(true);
+            }
+          }
+          if (prefill?.startTime) setStartTime(toUtcInputValue(prefill.startTime));
+          if (prefill?.endTime) setEndTime(toUtcInputValue(prefill.endTime));
+          if (prefill?.duration) setDuration(prefill.duration);
         }
       } catch (err) {
         setError('Failed to load initial data');
@@ -115,7 +202,7 @@ export default function TestCreationWizard() {
     };
 
     fetchInitialData();
-  }, [testId, isEditing]);
+  }, [testId, isEditing, prefill, profile?.course_id]);
 
   // --- FETCH QUESTIONS WHEN COURSE CHANGES ---
   useEffect(() => {
@@ -141,12 +228,34 @@ export default function TestCreationWizard() {
     fetchQuestions();
   }, [selectedCourse, questionFilters]);
 
+  useEffect(() => {
+    if (!selectedTemplateObject) return;
+    setDuration(templateDurationMinutes);
+  }, [selectedTemplateObject?.id, templateDurationMinutes]);
+
+  useEffect(() => {
+    if (!startTime) {
+      setEndTime('');
+      return;
+    }
+
+    const computedEnd = addMinutesToUtcInput(startTime, templateDurationMinutes);
+    if (computedEnd) {
+      setEndTime(computedEnd);
+    }
+  }, [startTime, templateDurationMinutes]);
+
   // --- HANDLERS ---
   const handleSelectQuestion = (questionId) => {
     setSelectedQuestions(prev => {
       const isAlreadySelected = prev.some(id => String(id) === String(questionId));
       if (isAlreadySelected) {
         return prev.filter(id => String(id) !== String(questionId));
+      }
+
+      if (templateQuestionLimit > 0 && prev.length >= templateQuestionLimit) {
+        setError(`Template allows only ${templateQuestionLimit} questions.`);
+        return prev;
       } else {
         return [...prev, questionId];
       }
@@ -183,25 +292,43 @@ export default function TestCreationWizard() {
   };
 
   const handleNext = () => {
-    // Validate current step
+    setError('');
+
     if (activeStep === 0) {
+      // Basic Info validation
       if (!testName || !selectedCourse || !selectedTemplate) {
         setError('Please fill in Name, Course, and Template');
         return;
       }
-    } else if (activeStep === 1) {
-      if (selectedQuestions.length === 0) {
-        setError('Please select at least one question');
-        return;
+    } else if (skipQuestionStep) {
+      // When skipping questions: step 1 = Schedule
+      if (activeStep === 1) {
+        if (!startTime || !endTime) {
+          setError('Please set start and end times');
+          return;
+        }
       }
-    } else if (activeStep === 2) {
-      if (!startTime || !endTime) {
-        setError('Please set start and end times');
-        return;
+    } else {
+      // Normal flow: step 1 = Questions, step 2 = Schedule
+      if (activeStep === 1) {
+        // Select Questions validation
+        if (selectedQuestions.length === 0) {
+          setError('Please select at least one question');
+          return;
+        }
+        if (templateQuestionLimit > 0 && selectedQuestions.length > templateQuestionLimit) {
+          setError(`Template allows only ${templateQuestionLimit} questions.`);
+          return;
+        }
+      } else if (activeStep === 2) {
+        // Schedule validation
+        if (!startTime || !endTime) {
+          setError('Please set start and end times');
+          return;
+        }
       }
     }
 
-    setError('');
     setActiveStep(prev => prev + 1);
   };
 
@@ -212,122 +339,164 @@ export default function TestCreationWizard() {
   const handlePublish = async () => {
     setLoading(true);
     try {
-      const testData = {
+      if (!testName || !selectedCourse || !selectedTemplate) {
+        setError('Please fill in Name, Course, and Template');
+        return;
+      }
+
+      if (selectedQuestions.length === 0) {
+        setError('Please select at least one question');
+        return;
+      }
+
+      if (templateQuestionLimit > 0 && selectedQuestions.length > templateQuestionLimit) {
+        setError(`Template allows only ${templateQuestionLimit} questions.`);
+        return;
+      }
+
+      if (!startTime || !endTime) {
+        setError('Please set start and end times');
+        return;
+      }
+
+      const payload = {
         name: testName,
         courseId: selectedCourse,
         templateId: selectedTemplate,
         questionIds: selectedQuestions,
-        startTime: new Date(startTime).toISOString(),
-        endTime: new Date(endTime).toISOString(),
+        startTime: utcInputToIso(startTime),
+        endTime: utcInputToIso(endTime),
         isPublished: true,
       };
 
-      if (isEditing) {
-        await updateTest(testId, testData);
-        setSuccess('Test updated successfully!');
+      // Only update if editing a published test (not a draft)
+      // Drafts should create a NEW separate test entry
+      if (isEditing && !isDraftBeingPublished) {
+        await updateTest(testId, payload);
+        setSuccess('Test updated successfully');
       } else {
-        await createTest(testData);
-        setSuccess('Test created and published successfully!');
+        // Always create a new test (whether it's new or publishing a draft)
+        await createTest(payload);
+        setSuccess('Test created successfully');
       }
 
+      // If this is a draft being published, remove the old draft row so it cannot reappear.
+      if (isEditing && isDraftBeingPublished) {
+        try {
+          await deleteTest(testId);
+        } catch (err) {
+          console.log('Note: Could not delete old draft, but new scheduled test was created');
+        }
+      }
       setTimeout(() => {
         navigate('/teacher/dashboard');
-      }, 2000);
+      }, 1200);
     } catch (err) {
-      setError(`Failed to ${isEditing ? 'update' : 'create'} test: ${err.message}`);
-      console.error(err);
+      console.error('Failed to save test:', err);
+      setError(err?.response?.data?.message || err.message || 'Failed to save test');
     } finally {
       setLoading(false);
     }
   };
 
-  // --- RENDER STEP CONTENT ---
-  const renderStepContent = () => {
-    switch (activeStep) {
-      case 0:
-        return (
-          <Box sx={{ p: 3 }}>
-            <Typography variant="h6" sx={{ mb: 3 }}>
-              Basic Test Information
-            </Typography>
+  const renderBasicInfo = () => (
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h6" sx={{ mb: 3 }}>
+        Basic Test Information
+      </Typography>
 
-            <TextField
-              fullWidth
-              label="Test Name"
-              value={testName}
-              onChange={e => setTestName(e.target.value)}
-              placeholder="e.g., React Fundamentals Quiz"
-              sx={{ mb: 2 }}
-            />
+      <TextField
+        fullWidth
+        label="Test Name"
+        value={testName}
+        onChange={e => setTestName(e.target.value)}
+        placeholder="e.g., React Fundamentals Quiz"
+        sx={{ mb: 2 }}
+      />
 
-            <FormControl fullWidth sx={{ mb: 3 }}>
-              <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Select Course</InputLabel>
-              <Select
-                value={selectedCourse}
-                label="Select Course"
-                onChange={e => setSelectedCourse(e.target.value)}
-                sx={{ color: "#fff" }}
-              >
-                {courses.map(course => (
-                  <MenuItem key={course.id} value={course.id}>
-                    {course.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+      <FormControl fullWidth sx={{ mb: 3 }}>
+        <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Select Course</InputLabel>
+        <Select
+          value={selectedCourse}
+          label="Select Course"
+          onChange={e => setSelectedCourse(e.target.value)}
+          disabled={isCourseLocked}
+          sx={{ color: "#fff" }}
+        >
+          {courses.map(course => (
+            <MenuItem key={course.id} value={course.id}>
+              {course.name}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
 
-            <FormControl fullWidth sx={{ mb: 3 }}>
-              <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Select Template</InputLabel>
-              <Select
-                value={selectedTemplate}
-                label="Select Template"
-                onChange={e => setSelectedTemplate(e.target.value)}
-                sx={{ color: "#fff" }}
-              >
-                {templates.map(template => (
-                  <MenuItem key={template.id} value={template.id}>
-                    {template.name} ({template.type})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+      <FormControl fullWidth sx={{ mb: 3 }}>
+        <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Select Template</InputLabel>
+        <Select
+          value={selectedTemplate}
+          label="Select Template"
+          onChange={e => setSelectedTemplate(e.target.value)}
+          sx={{ color: "#fff" }}
+        >
+          {templates.map(template => (
+            <MenuItem key={template.id} value={template.id}>
+              {template.name} ({template.type})
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
 
-            {selectedCourse && (
-              <Alert
-                severity="info"
-                sx={{
-                  bgcolor: "rgba(6, 182, 212, 0.05)",
-                  color: "#06B6D4",
-                  border: "1px solid rgba(6, 182, 212, 0.2)",
-                  borderRadius: "12px"
-                }}
-              >
-                Questions will be filtered to show only those from{' '}
-                <strong>{courses.find(c => c.id === selectedCourse)?.name}</strong>
-              </Alert>
-            )}
-          </Box>
-        );
+      {selectedCourse && (
+        <Alert
+          severity="info"
+          sx={{
+            bgcolor: "rgba(6, 182, 212, 0.05)",
+            color: "#06B6D4",
+            border: "1px solid rgba(6, 182, 212, 0.2)",
+            borderRadius: "12px"
+          }}
+        >
+          Questions will be filtered to show only those from{' '}
+          <strong>{courses.find(c => c.id === selectedCourse)?.name}</strong>
+        </Alert>
+      )}
+      {isCourseLocked && (
+        <Alert
+          severity="info"
+          sx={{
+            mt: 2,
+            bgcolor: "rgba(0, 221, 179, 0.05)",
+            color: "#00DDB3",
+            border: "1px solid rgba(0, 221, 179, 0.2)",
+            borderRadius: "12px"
+          }}
+        >
+          Course is locked to your mapped teacher course for consistent test-course assignment.
+        </Alert>
+      )}
+    </Box>
+  );
 
-      case 1:
-        return (
-          <Box sx={{ p: 3 }}>
-            <Typography variant="h6" sx={{ mb: 3 }}>
-              Select Questions for Test
-            </Typography>
+  const renderSelectQuestions = () => (
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h6" sx={{ mb: 3 }}>
+        Select Questions for Test
+      </Typography>
 
-            {/* Filters */}
-            <Box sx={{
-              p: 3,
-              mb: 4,
-              bgcolor: "rgba(255, 255, 255, 0.03)",
-              borderRadius: "20px",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              backdropFilter: "blur(10px)"
-            }}>
-              <Typography variant="subtitle2" sx={{ color: "rgba(255,255,255,0.5)", mb: 2, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", fontSize: "0.75rem" }}>
-                Refine Question Bank
-              </Typography>
+            {/* Questions continuing... */}
+      {/* Filters */}
+      <Box sx={{
+        p: 3,
+        mb: 4,
+        bgcolor: "rgba(255, 255, 255, 0.03)",
+        borderRadius: "20px",
+        border: "1px solid rgba(255, 255, 255, 0.08)",
+        backdropFilter: "blur(10px)"
+      }}>
+        <Typography variant="subtitle2" sx={{ color: "rgba(255,255,255,0.5)", mb: 2, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", fontSize: "0.75rem" }}>
+          Refine Question Bank
+        </Typography>
               <Grid container spacing={3}>
                 <Grid item xs={12} sm={6}>
                   <FormControl fullWidth variant="filled" sx={{ "& .MuiFilledInput-root": { bgcolor: "rgba(0,0,0,0.3)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)" } }}>
@@ -420,19 +589,22 @@ export default function TestCreationWizard() {
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {availableQuestions.map(question => {
                   const isSelected = selectedQuestions.some(sqId => String(sqId) === String(question.id));
+                  const selectionLocked = !isSelected && templateQuestionLimit > 0 && selectedQuestions.length >= templateQuestionLimit;
                   return (
                     <Card
                       key={question.id}
                       onClick={() => handleSelectQuestion(question.id)}
                       sx={{
                         p: 3,
-                        cursor: 'pointer',
+                        cursor: selectionLocked ? 'not-allowed' : 'pointer',
                         border: isSelected
                           ? '2px solid #00DDB3'
                           : '1px solid rgba(255,255,255,0.05)',
                         bgcolor: isSelected
                           ? 'rgba(0, 221, 179, 0.05)'
-                          : 'rgba(255, 255, 255, 0.02)',
+                          : selectionLocked
+                            ? 'rgba(255,255,255,0.01)'
+                            : 'rgba(255, 255, 255, 0.02)',
                         borderRadius: "16px",
                         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                         '&:hover': {
@@ -445,6 +617,7 @@ export default function TestCreationWizard() {
                       <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
                         <Checkbox
                           checked={isSelected}
+                          disabled={selectionLocked}
                           onClick={(e) => e.stopPropagation()}
                           onChange={() => handleSelectQuestion(question.id)}
                           sx={{
@@ -488,6 +661,7 @@ export default function TestCreationWizard() {
                         <Button
                           size="small"
                           startIcon={<Eye size={16} />}
+                          disabled={selectionLocked}
                           onClick={(e) => {
                             e.stopPropagation();
                             setPreviewQuestion(question);
@@ -509,118 +683,133 @@ export default function TestCreationWizard() {
             )}
 
             <Typography variant="body2" sx={{ mt: 2, color: 'text.secondary' }}>
-              Selected: {selectedQuestions.length} questions
+              Selected: {selectedQuestions.length} questions{templateQuestionLimit > 0 ? ` / ${templateQuestionLimit} allowed by template` : ''}
             </Typography>
           </Box>
-        );
+  );
 
-      case 2:
-        return (
-          <Box sx={{ p: 3 }}>
-            <Typography variant="h6" sx={{ mb: 3 }}>
-              Schedule Test
-            </Typography>
+  const renderSchedule = () => (
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h6" sx={{ mb: 3 }}>
+        Schedule Test
+      </Typography>
 
-            <TextField
-              fullWidth
-              label="Start Date & Time"
-              type="datetime-local"
-              value={startTime}
-              onChange={e => setStartTime(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ mb: 2 }}
-            />
+      <TextField
+        fullWidth
+        label="Start Date & Time (UTC)"
+        type="datetime-local"
+        value={startTime}
+        onChange={e => setStartTime(e.target.value)}
+        InputLabelProps={{ shrink: true }}
+        sx={{ mb: 2 }}
+      />
 
-            <TextField
-              fullWidth
-              label="End Date & Time"
-              type="datetime-local"
-              value={endTime}
-              onChange={e => setEndTime(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ mb: 2 }}
-            />
+      <TextField
+        fullWidth
+        label="End Date & Time (UTC, auto)"
+        type="datetime-local"
+        value={endTime}
+        onChange={() => {}}
+        disabled
+        InputLabelProps={{ shrink: true }}
+        sx={{ mb: 2 }}
+      />
 
-            <TextField
-              fullWidth
-              label="Duration (minutes)"
-              type="number"
-              value={duration}
-              onChange={e => setDuration(parseInt(e.target.value))}
-              sx={{ mb: 2 }}
-            />
+      <TextField
+        fullWidth
+        label="Duration (minutes, from template)"
+        type="number"
+        value={duration}
+        onChange={() => {}}
+        disabled
+        sx={{ mb: 2 }}
+      />
 
-            <Alert severity="info">
-              Test will be available from {startTime || 'start time'} to{' '}
-              {endTime || 'end time'}
-            </Alert>
-          </Box>
-        );
+      <Alert severity="info">
+        End time is auto-calculated from template duration in UTC: {formatUtcDisplay(startTime) || 'start time'} to{' '}
+        {formatUtcDisplay(endTime) || 'end time'}.
+        {' '}Pakistan view: {formatPktFromUtcInput(startTime) || 'start time'} to {formatPktFromUtcInput(endTime) || 'end time'} ({PK_TIMEZONE})
+      </Alert>
+    </Box>
+  );
 
-      case 3:
-        return (
-          <Box sx={{ p: 3 }}>
-            <Typography variant="h6" sx={{ mb: 3 }}>
-              Review & Publish
-            </Typography>
+  const renderReview = () => (
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h6" sx={{ mb: 3 }}>
+        Review & Publish
+      </Typography>
 
-            <Box sx={{
-              p: 4,
-              bgcolor: "rgba(0,0,0,0.3)",
-              borderRadius: "24px",
-              border: "1px solid rgba(255,255,255,0.05)",
-              mb: 4
-            }}>
-              <Grid container spacing={4}>
-                <Grid item xs={12} sm={6}>
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>TEST NAME</Typography>
-                    <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{testName}</Typography>
-                  </Box>
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>COURSE</Typography>
-                    <Typography variant="body1" sx={{ color: "#06B6D4", fontWeight: 700 }}>{courses.find(c => c.id === selectedCourse)?.name}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>TEMPLATE</Typography>
-                    <Typography variant="body1" sx={{ color: "#00DDB3", fontWeight: 700 }}>{templates.find(t => t.id === selectedTemplate)?.name || 'None Selected'}</Typography>
-                  </Box>
-                </Grid>
-
-                <Grid item xs={12} sm={6}>
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>QUESTIONS</Typography>
-                    <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{selectedQuestions.length} questions selected</Typography>
-                  </Box>
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>SCHEDULE</Typography>
-                    <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
-                      {new Date(startTime).toLocaleString()} to {new Date(endTime).toLocaleString()}
-                    </Typography>
-                  </Box>
-                </Grid>
-              </Grid>
+      <Box sx={{
+        p: 4,
+        bgcolor: "rgba(0,0,0,0.3)",
+        borderRadius: "24px",
+        border: "1px solid rgba(255,255,255,0.05)",
+        mb: 4
+      }}>
+        <Grid container spacing={4}>
+          <Grid item xs={12} sm={6}>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>TEST NAME</Typography>
+              <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{testName}</Typography>
             </Box>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>COURSE</Typography>
+              <Typography variant="body1" sx={{ color: "#06B6D4", fontWeight: 700 }}>{courses.find(c => c.id === selectedCourse)?.name}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>TEMPLATE</Typography>
+              <Typography variant="body1" sx={{ color: "#00DDB3", fontWeight: 700 }}>{templates.find(t => t.id === selectedTemplate)?.name || 'None Selected'}</Typography>
+            </Box>
+          </Grid>
 
-            <Alert
-              severity="success"
-              icon={<Plus size={20} />}
-              sx={{
-                bgcolor: "rgba(0, 221, 179, 0.05)",
-                color: "#00DDB3",
-                border: "1px solid rgba(0, 221, 179, 0.2)",
-                borderRadius: "16px",
-                "& .MuiAlert-icon": { color: "#00DDB3" }
-              }}
-            >
-              Ready to publish! Click "Publish Test" to make it available to students.
-            </Alert>
-          </Box>
-        );
+          <Grid item xs={12} sm={6}>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>QUESTIONS</Typography>
+              <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{selectedQuestions.length} questions selected</Typography>
+            </Box>
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>SCHEDULE</Typography>
+              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
+                {formatUtcDisplay(startTime)} to {formatUtcDisplay(endTime)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.55)", display: "block", mt: 0.5 }}>
+                Pakistan view: {formatPktFromUtcInput(startTime)} to {formatPktFromUtcInput(endTime)} ({PK_TIMEZONE})
+              </Typography>
+            </Box>
+          </Grid>
+        </Grid>
+      </Box>
 
-      default:
-        return null;
+      <Alert
+        severity="success"
+        icon={<Plus size={20} />}
+        sx={{
+          bgcolor: "rgba(0, 221, 179, 0.05)",
+          color: "#00DDB3",
+          border: "1px solid rgba(0, 221, 179, 0.2)",
+          borderRadius: "16px",
+          "& .MuiAlert-icon": { color: "#00DDB3" }
+        }}
+      >
+        Ready to publish! Click "Publish Test" to make it available to students.
+      </Alert>
+    </Box>
+  );
+
+  const renderStepContent = () => {
+    if (skipQuestionStep) {
+      // When skipping questions: Basic Info → Schedule → Review
+      if (activeStep === 0) return renderBasicInfo();
+      if (activeStep === 1) return renderSchedule();
+      if (activeStep === 2) return renderReview();
+    } else {
+      // Normal flow: Basic Info → Select Questions → Schedule → Review
+      if (activeStep === 0) return renderBasicInfo();
+      if (activeStep === 1) return renderSelectQuestions();
+      if (activeStep === 2) return renderSchedule();
+      if (activeStep === 3) return renderReview();
     }
+    return null;
   };
 
   return (
@@ -639,7 +828,7 @@ export default function TestCreationWizard() {
           border: "1px solid rgba(255,255,255,0.05)"
         }}>
           <Typography variant="h3" sx={{ mb: 4, fontWeight: 800, textAlign: "center", background: "linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.5) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            {isEditing ? 'Edit Existing Test' : 'Create New Test'}
+            {isDraftBeingPublished ? 'Publish Draft Test' : isEditing ? 'Edit Published Test' : 'Create New Test'}
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -669,6 +858,7 @@ export default function TestCreationWizard() {
               onClick={handleBack}
             >
               Back
+
             </Button>
 
             {activeStep === steps.length - 1 ? (
@@ -686,7 +876,7 @@ export default function TestCreationWizard() {
                   '&:hover': { transform: "scale(1.02)", boxShadow: "0 0 20px rgba(0, 221, 179, 0.4)" }
                 }}
               >
-                {loading ? <CircularProgress size={24} color="inherit" /> : (isEditing ? 'Update Test' : 'Publish Test')}
+                {loading ? <CircularProgress size={24} color="inherit" /> : 'Publish Test'}
               </Button>
             ) : (
               <Button

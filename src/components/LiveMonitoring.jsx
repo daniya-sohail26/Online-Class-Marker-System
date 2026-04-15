@@ -33,30 +33,162 @@ export default function LiveMonitoring() {
             
         if (!enrollment) return;
 
+        const studentIds = enrollment.map((e) => e.user_id).filter(Boolean);
+
+        const { data: tests } = await supabase
+            .from('tests')
+            .select('id, name, start_time, end_time, is_published')
+            .eq('course_id', cId)
+            .eq('is_published', true);
+
+        const testIds = (tests ?? []).map((t) => t.id);
+
+        const { data: schedules } = testIds.length > 0
+            ? await supabase
+                .from('test_schedules')
+                .select('test_id, availability_start, availability_end, is_active')
+                .in('test_id', testIds)
+                .eq('is_active', true)
+            : { data: [] };
+
         const { data: attempts } = await supabase
             .from('attempts')
             .select('*')
-            .in('student_id', enrollment.map(e => e.user_id));
+            .in('student_id', studentIds);
+
+        const attemptIds = (attempts ?? []).map((a) => a.id).filter(Boolean);
+        const { data: answers } = attemptIds.length > 0
+            ? await supabase
+                .from('answers')
+                .select('attempt_id')
+                .in('attempt_id', attemptIds)
+            : { data: [] };
+
+        const answerCountMap = (answers ?? []).reduce((acc, row) => {
+            acc[row.attempt_id] = (acc[row.attempt_id] || 0) + 1;
+            return acc;
+        }, {});
+
+        const scheduleMap = (schedules ?? []).reduce((acc, row) => {
+            const existing = acc[row.test_id];
+            if (!existing) {
+                acc[row.test_id] = row;
+                return acc;
+            }
+            const existingStart = existing.availability_start ? new Date(existing.availability_start).getTime() : 0;
+            const rowStart = row.availability_start ? new Date(row.availability_start).getTime() : 0;
+            if (rowStart >= existingStart) acc[row.test_id] = row;
+            return acc;
+        }, {});
+
+        const attemptsByStudentAndTest = (attempts ?? []).reduce((acc, row) => {
+            if (!row.student_id || !row.test_id) return acc;
+            const key = `${row.student_id}::${row.test_id}`;
+            const prev = acc[key];
+            if (!prev) {
+                acc[key] = row;
+                return acc;
+            }
+            const prevTs = new Date(prev.created_at || prev.started_at || 0).getTime();
+            const rowTs = new Date(row.created_at || row.started_at || 0).getTime();
+            if (rowTs >= prevTs) acc[key] = row;
+            return acc;
+        }, {});
+
+        const now = new Date();
+
+        const getWindow = (testId, fallbackStart, fallbackEnd) => {
+            const schedule = scheduleMap[testId];
+            const startRaw = schedule?.availability_start || fallbackStart || null;
+            const endRaw = schedule?.availability_end || fallbackEnd || null;
+            const start = startRaw ? new Date(startRaw) : null;
+            const end = endRaw ? new Date(endRaw) : null;
+            const valid = Boolean(
+                start &&
+                end &&
+                !Number.isNaN(start.getTime()) &&
+                !Number.isNaN(end.getTime()) &&
+                end > start
+            );
+            return { start, end, valid };
+        };
+
+        const statusPriority = {
+            Suspicious: 6,
+            Active: 5,
+            'Not Started': 4,
+            Upcoming: 3,
+            Submitted: 2,
+            Missed: 1,
+            Inactive: 0,
+        };
+
+        const statusColorMap = {
+            Suspicious: '#ef4444',
+            Active: '#00DDB3',
+            'Not Started': '#06B6D4',
+            Upcoming: '#a78bfa',
+            Submitted: '#22D3EE',
+            Missed: '#f59e0b',
+            Inactive: '#94a3b8',
+        };
 
         const roster = enrollment.map(e => {
             const user = e.users;
-            const att = attempts?.find(a => a.student_id === user.id);
-            let status = 'Inactive';
-            let color = '#94a3b8';
-            if (att) {
-                if (att.submitted_at) { status = 'Submitted'; color = '#06B6D4'; }
-                else if (att.violations > 0) { status = 'Suspicious'; color = '#ef4444'; }
-                else { status = 'Active'; color = '#00DDB3'; }
+            const perTestStatuses = (tests ?? []).map((test) => {
+                const key = `${user.id}::${test.id}`;
+                const att = attemptsByStudentAndTest[key];
+                const window = getWindow(test.id, test.start_time, test.end_time);
+
+                let status = 'Inactive';
+                if (!window.valid) {
+                    status = att?.submitted_at ? 'Submitted' : 'Inactive';
+                } else if (att?.submitted_at) {
+                    status = 'Submitted';
+                } else if (window.start > now) {
+                    status = 'Upcoming';
+                } else if (window.end < now) {
+                    status = att ? 'Missed' : 'Inactive';
+                } else if (att && Number(att.violations || 0) > 0) {
+                    status = 'Suspicious';
+                } else if (att) {
+                    status = 'Active';
+                } else {
+                    status = 'Not Started';
+                }
+
+                return {
+                    testId: test.id,
+                    testName: test.name || 'Test',
+                    status,
+                    color: statusColorMap[status] || '#94a3b8',
+                    attemptId: att?.id || null,
+                    violations: Number(att?.violations || 0),
+                    answered: att?.id ? (answerCountMap[att.id] || 0) : 0,
+                };
+            });
+
+            let primaryStatus = 'Inactive';
+            for (const item of perTestStatuses) {
+                if ((statusPriority[item.status] || 0) > (statusPriority[primaryStatus] || 0)) {
+                    primaryStatus = item.status;
+                }
             }
+
+            const primaryColor = statusColorMap[primaryStatus] || '#94a3b8';
+            const totalViolations = perTestStatuses.reduce((sum, t) => sum + (t.violations || 0), 0);
+            const activeAttempt = perTestStatuses.find((t) => t.status === 'Active' || t.status === 'Suspicious');
+
             return {
                 id: user.id, 
                 name: user.name || "Unknown Student", 
                 email: user.email,
-                status, 
-                statusColor: color, 
-                violations: att?.violations || 0,
-                questionsAnswered: att ? (att.violations > 0 ? 4 : 2) : 0, 
-                totalQuestions: 10
+                status: primaryStatus,
+                statusColor: primaryColor,
+                violations: totalViolations,
+                questionsAnswered: activeAttempt?.answered || 0,
+                totalQuestions: 10,
+                testStatuses: perTestStatuses,
             };
         });
         setStudents(roster);
@@ -269,6 +401,31 @@ export default function LiveMonitoring() {
                                                 {student.violations} Flags
                                             </Typography>
                                         </Stack>
+
+                                        <Divider sx={{ my: 2, borderColor: "rgba(255,255,255,0.08)" }} />
+                                        <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.55)", fontWeight: 700 }}>
+                                            Test Statuses
+                                        </Typography>
+                                        <Box sx={{ mt: 1.2, display: "flex", flexWrap: "wrap", gap: 0.8 }}>
+                                            {(student.testStatuses || []).length === 0 ? (
+                                                <Chip size="small" label="No Tests" sx={{ bgcolor: "rgba(148,163,184,0.15)", color: "#94a3b8" }} />
+                                            ) : (
+                                                student.testStatuses.map((item) => (
+                                                    <Chip
+                                                        key={`${student.id}-${item.testId}`}
+                                                        size="small"
+                                                        label={`${item.testName}: ${item.status}`}
+                                                        sx={{
+                                                            bgcolor: `${item.color}20`,
+                                                            color: item.color,
+                                                            border: `1px solid ${item.color}55`,
+                                                            maxWidth: '100%',
+                                                            '& .MuiChip-label': { whiteSpace: 'normal' },
+                                                        }}
+                                                    />
+                                                ))
+                                            )}
+                                        </Box>
                                     </Card>
                                 </motion.div>
                             </Grid>

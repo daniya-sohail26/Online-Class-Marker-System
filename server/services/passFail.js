@@ -8,7 +8,11 @@
 export function computePassResult(totalScore, testRow, templateConfig, marksByQ) {
   const sumQuestionMarks = Object.values(marksByQ || {}).reduce((s, m) => s + Number(m ?? 0), 0);
   let maxMarks = Number(testRow?.total_marks);
-  if (!Number.isFinite(maxMarks) || maxMarks <= 0) {
+
+  // Authoritative max marks should come from the actual linked test questions when available.
+  if (Number.isFinite(sumQuestionMarks) && sumQuestionMarks > 0) {
+    maxMarks = sumQuestionMarks;
+  } else if (!Number.isFinite(maxMarks) || maxMarks <= 0) {
     maxMarks = sumQuestionMarks;
   }
   if (!maxMarks || maxMarks <= 0) {

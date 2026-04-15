@@ -22,6 +22,7 @@ export async function loadAttemptReportData(supabase, attemptId) {
         id,
         name,
         course_id,
+        end_time,
         total_marks,
         template_id,
         created_by,

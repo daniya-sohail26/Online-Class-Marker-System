@@ -7,7 +7,7 @@ import {
   Dialog, DialogContent, Snackbar, Alert
 } from "@mui/material";
 import {
-  Sparkles, Save, Plus, FileUp, History, Calendar,
+  Sparkles, Save, Plus, FileUp, History,
   Trash2, Database, RefreshCcw, X, Wand2, Target, 
   ChevronRight, SlidersHorizontal, Lightbulb, AlertCircle, PlayCircle, Eye,
   CheckCircle2
@@ -54,8 +54,8 @@ export default function QuestionBank() {
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("new");
-
-  const [schedulingData, setSchedulingData] = useState({ date: "", time: "", duration: 60, batch: "" });
+  const [currentDraftTestId, setCurrentDraftTestId] = useState(null);
+  const [draftPickerValue, setDraftPickerValue] = useState("");
 
   // --- 🌟 3-STEP BRIDGE FETCHER 🌟 ---
   useEffect(() => {
@@ -130,15 +130,23 @@ export default function QuestionBank() {
 
       const { data: pastTests } = await supabase
         .from("tests")
-        .select(`id, name, test_schedules ( availability_start ), test_questions ( question_id )`)
+        .select(`id, name, is_published, start_time, test_schedules ( availability_start ), test_questions ( question_id )`)
         .eq("course_id", selectedCourseId)
         .order("created_at", { ascending: false });
 
       if (pastTests) {
         const formattedPastExams = pastTests.map(pt => {
           const schedule = pt.test_schedules && pt.test_schedules.length > 0 ? pt.test_schedules[0].availability_start : null;
-          const date = schedule ? new Date(schedule).toLocaleDateString() : "Unscheduled";
-          return { id: pt.id, title: pt.name, date: date, qs: pt.test_questions ? pt.test_questions.length : 0 };
+          const fallbackStart = pt.start_time || null;
+          const effectiveDate = schedule || fallbackStart;
+          const date = effectiveDate ? new Date(effectiveDate).toLocaleDateString() : "Unscheduled";
+          return {
+            id: pt.id,
+            title: pt.name,
+            date,
+            qs: pt.test_questions ? pt.test_questions.length : 0,
+            isPublished: !!pt.is_published,
+          };
         });
         setPastExams(formattedPastExams);
       }
@@ -151,7 +159,55 @@ export default function QuestionBank() {
   useEffect(() => {
     fetchCourseData();
     setSelectedTemplateId("new"); 
+    setCurrentDraftTestId(null);
   }, [selectedCourseId]);
+
+  const mapDbQuestionToBankQuestion = (q) => ({
+    id: q.id,
+    text: q.question_text,
+    options: [q.option_a, q.option_b, q.option_c, q.option_d],
+    correct: ['A', 'B', 'C', 'D'].indexOf(q.correct_option),
+    explanation: q.explanation || "",
+    difficulty: q.difficulty ? (q.difficulty.charAt(0).toUpperCase() + q.difficulty.slice(1)) : "Medium",
+    points: 1.0,
+    isAiGenerated: q.is_ai_generated || false,
+  });
+
+  const handleOpenDraftInGenerator = async (exam) => {
+    try {
+      setIsLoadingExam(true);
+
+      const { data: testQuestionRows, error } = await supabase
+        .from("test_questions")
+        .select("questions(*)")
+        .eq("test_id", exam.id);
+
+      if (error) throw error;
+
+      const questionRows = (testQuestionRows || [])
+        .map((row) => row.questions)
+        .filter(Boolean);
+
+      if (questionRows.length === 0) {
+        showToast("This draft has no linked questions yet.", "warning");
+        return;
+      }
+
+      const mappedQuestions = questionRows.map(mapDbQuestionToBankQuestion);
+      setOfficialBank(mappedQuestions);
+      setWorkspaceMode("official");
+      setExamTitle(exam.title);
+      setCurrentDraftTestId(exam.id);
+      setActiveQuestionId(mappedQuestions[0]?.id || null);
+      setActiveTab(0);
+
+      showToast("Draft opened in generator. Review/regenerate and continue to wizard when ready.", "success");
+    } catch (err) {
+      showToast(err.message || "Could not open draft in generator.", "error");
+    } finally {
+      setIsLoadingExam(false);
+    }
+  };
 
   const handleViewExamDetails = async (exam) => {
     setIsLoadingExam(true);
@@ -178,6 +234,10 @@ export default function QuestionBank() {
       }
     }
   };
+
+  const selectedTemplateObject = templates.find((template) => template.id === selectedTemplateId);
+  const templateQuestionLimit = Number(selectedTemplateObject?.total_questions || 0);
+  const templateMarksPerQuestion = Number(selectedTemplateObject?.marks_per_question || 1);
 
   const activeQuestion = workspaceMode === "official"
     ? officialBank.find(q => q.id === activeQuestionId) || officialBank[0]
@@ -328,12 +388,99 @@ export default function QuestionBank() {
     setOfficialBank([...officialBank]); 
   };
 
+  const resetGeneratorWorkspace = () => {
+    setAiDrafts([]);
+    setOfficialBank([]);
+    setActiveQuestionId(null);
+    setCurrentDraftTestId(null);
+    setDraftPickerValue("");
+    setWorkspaceMode("sandbox");
+    setExamTitle("Course Final Assessment");
+  };
+
+  const persistDraftFromCurrentBank = async () => {
+    if (!selectedCourseId) throw new Error("No mapped course found for this account.");
+    if (officialBank.length === 0) throw new Error("Cannot save an empty question bank as draft.");
+    if (templateQuestionLimit > 0 && officialBank.length > templateQuestionLimit) {
+      throw new Error(`Template allows only ${templateQuestionLimit} questions, but ${officialBank.length} were provided.`);
+    }
+
+    const totalMarks = officialBank.reduce((sum, q) => {
+      const marks = Number(q.points ?? templateMarksPerQuestion ?? 1);
+      return sum + (Number.isFinite(marks) ? marks : 1);
+    }, 0);
+
+    await saveBankToDatabase();
+
+    let draftId = currentDraftTestId;
+
+    if (draftId) {
+      const { error: updateTestError } = await supabase
+        .from("tests")
+        .update({
+          name: examTitle,
+          course_id: selectedCourseId,
+          template_id: selectedTemplateId && selectedTemplateId !== "new" ? selectedTemplateId : null,
+          total_marks: totalMarks,
+          is_published: false,
+        })
+        .eq("id", draftId);
+
+      if (updateTestError) throw new Error(`Draft update error: ${updateTestError.message}`);
+
+      const { error: clearLinksError } = await supabase
+        .from("test_questions")
+        .delete()
+        .eq("test_id", draftId);
+
+      if (clearLinksError) throw new Error(`Draft link reset error: ${clearLinksError.message}`);
+    } else {
+      if (!profile?.user_id) {
+        throw new Error("Could not determine current teacher user id for draft ownership.");
+      }
+
+      const { data: newDraft, error: createDraftError } = await supabase
+        .from("tests")
+        .insert([{
+          name: examTitle,
+          course_id: selectedCourseId,
+          template_id: selectedTemplateId && selectedTemplateId !== "new" ? selectedTemplateId : null,
+          total_marks: totalMarks,
+          created_by: profile.user_id,
+          is_published: false,
+        }])
+        .select("id")
+        .single();
+
+      if (createDraftError) throw new Error(`Draft create error: ${createDraftError.message}`);
+      draftId = newDraft.id;
+    }
+
+    const draftLinks = officialBank.map((q) => ({
+      test_id: draftId,
+      question_id: q.id,
+      marks: q.points || 1.0,
+    }));
+
+    if (draftLinks.length > 0) {
+      const { error: linkDraftError } = await supabase
+        .from("test_questions")
+        .insert(draftLinks);
+
+      if (linkDraftError) throw new Error(`Draft link error: ${linkDraftError.message}`);
+    }
+
+    return draftId;
+  };
+
   const handleSaveOfficialBank = async () => {
     setIsSaving(true);
     try {
-      await saveBankToDatabase();
-      showToast("Question bank synced to database successfully!", "success");
-      setActiveTab(2); 
+      const draftId = await persistDraftFromCurrentBank();
+      showToast(`Question bank saved as unscheduled draft (${draftId.slice(0, 8)}).`, "success");
+      resetGeneratorWorkspace();
+      await fetchCourseData();
+      setActiveTab(1); 
     } catch (err) {
       showToast(err.message, "error");
     } finally {
@@ -341,49 +488,25 @@ export default function QuestionBank() {
     }
   };
 
-  const handleDeployExam = async () => {
-    if (!schedulingData.date || !schedulingData.time) return showToast("Please select a date and time.", "warning");
-    
+  const handleCreateTestDraft = async () => {
+    if (!selectedCourseId) return showToast("No mapped course found for this account.", "warning");
+    if (officialBank.length === 0) return showToast("Cannot continue with an empty bank.", "warning");
+
     setIsDeploying(true);
     try {
-      await saveBankToDatabase();
-      let templateIdToUse = selectedTemplateId;
-
-      if (!templateIdToUse || templateIdToUse === "new") {
-        const { data: template, error: tError } = await supabase.from('templates').insert([{ course_id: selectedCourseId, name: examTitle, total_questions: officialBank.length, duration_minutes: schedulingData.duration, template_type: 'exam', is_active: true }]).select().single();
-        if (tError) throw new Error(`Template Error: ${tError.message}`);
-        templateIdToUse = template.id;
-      }
-
-      const { data: test, error: testError } = await supabase.from('tests').insert([{ name: examTitle, course_id: selectedCourseId, template_id: templateIdToUse }]).select().single();
-      if (testError) throw new Error(`Test Instance Error: ${testError.message}`);
-
-      const testQuestions = officialBank.map(q => ({ test_id: test.id, question_id: q.id, marks: q.points || 1.0 }));
-      const { error: tqError } = await supabase.from('test_questions').insert(testQuestions);
-      if (tqError) throw new Error(`Question Link Error: ${tqError.message}`);
-
-      const startTimestamp = `${schedulingData.date}T${schedulingData.time}:00`;
-      const startDate = new Date(startTimestamp);
-      const endDate = new Date(startDate.getTime() + (schedulingData.duration * 60 * 1000)); 
-
-      const { error: scheduleError } = await supabase.from('test_schedules').insert([{ test_id: test.id, availability_start: startDate.toISOString(), availability_end: endDate.toISOString(), time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone, is_active: true }]);
-      if (scheduleError) throw new Error(`Scheduling Error: ${scheduleError.message}`);
-
-      showToast("Exam successfully scheduled and deployed!", "success");
-      
-      setOfficialBank([]); 
-      setAiDrafts([]); 
-      setWorkspaceMode("sandbox"); 
-      setActiveTab(1); 
-      
+      const draftId = await persistDraftFromCurrentBank();
+      resetGeneratorWorkspace();
       await fetchCourseData();
-
+      navigate(`/teacher/test-creation/${draftId}`);
     } catch (err) {
-      showToast(err.message || "Deployment failed. See console.", "error");
+      showToast(err.message || "Could not continue to test creation.", "error");
     } finally {
       setIsDeploying(false);
     }
   };
+
+  const unscheduledExams = pastExams.filter((exam) => !exam.isPublished);
+  const scheduledExams = pastExams.filter((exam) => exam.isPublished);
 
   return (
     <Box sx={{ animation: "fadeIn 0.5s ease", pb: 10, color: "#fff", minHeight: "100vh" }}>
@@ -402,6 +525,27 @@ export default function QuestionBank() {
                 Database Error: Course Mapping Missing
               </Typography>
             )}
+            {unscheduledExams.length > 0 && (
+              <FormControl variant="standard" sx={{ minWidth: 280 }}>
+                <Select
+                  value={draftPickerValue}
+                  onChange={(e) => {
+                    const draftId = e.target.value;
+                    setDraftPickerValue(draftId);
+                    const picked = unscheduledExams.find((draft) => draft.id === draftId);
+                    if (picked) handleOpenDraftInGenerator(picked);
+                  }}
+                  displayEmpty
+                  disableUnderline
+                  sx={{ color: "#06B6D4", fontSize: "0.95rem", fontWeight: 700 }}
+                >
+                  <MenuItem value="" disabled>Select Unscheduled Draft</MenuItem>
+                  {unscheduledExams.map((draft) => (
+                    <MenuItem key={draft.id} value={draft.id}>{draft.title}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
           </Stack>
         </Box>
         <Stack direction="row" spacing={2} alignItems="center">
@@ -409,14 +553,16 @@ export default function QuestionBank() {
           <Button variant="contained" onClick={handleSaveOfficialBank} disabled={isSaving || officialBank.length === 0 || !selectedCourseId} startIcon={isSaving ? <CircularProgress size={18} color="inherit" /> : <Save size={18} />} sx={{ height: 48, borderRadius: "12px", px: 4, background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000", fontWeight: 800, textTransform: "none", fontSize: "1rem" }}>
             {isSaving ? "Saving..." : "Save Bank Data"}
           </Button>
+          <Button variant="outlined" onClick={handleCreateTestDraft} disabled={isDeploying || officialBank.length === 0 || !selectedCourseId} sx={{ height: 48, borderRadius: "12px", px: 3, borderColor: "rgba(6, 182, 212, 0.35)", color: "#06B6D4", fontWeight: 800, textTransform: "none", fontSize: "0.95rem" }}>
+            {isDeploying ? "Opening Wizard..." : "Create/Continue Test Draft"}
+          </Button>
         </Stack>
       </Box>
 
       {/* TABS */}
       <Tabs value={activeTab} onChange={(e, val) => setActiveTab(val)} sx={{ mb: 4, borderBottom: "1px solid rgba(255,255,255,0.05)", "& .MuiTab-root": { color: "rgba(255,255,255,0.5)", fontSize: "1rem", fontWeight: 700, textTransform: "none", minHeight: 60 }, "& .Mui-selected": { color: "#00DDB3 !important" }, "& .MuiTabs-indicator": { backgroundColor: "#00DDB3", height: 3 } }}>
         <Tab icon={<Sparkles size={18} />} label="Creation Workspace" iconPosition="start" />
-        <Tab icon={<History size={18} />} label="Past Exams" iconPosition="start" />
-        <Tab icon={<Calendar size={18} />} label="Exam Scheduler" iconPosition="start" />
+        <Tab icon={<History size={18} />} label="Past, Scheduled Exams and Unscheduled Drafts" iconPosition="start" />
       </Tabs>
 
       {/* TAB 0: WORKSPACE */}
@@ -644,9 +790,38 @@ export default function QuestionBank() {
       {/* TAB 1: ARCHIVES */}
       {activeTab === 1 && (
         <Box sx={{ height: "100%", overflowY: "auto" }}>
+          {unscheduledExams.length > 0 && (
+            <Card sx={{ p: 3, mb: 3, borderRadius: "24px", bgcolor: "rgba(6, 182, 212, 0.04)", border: "1px solid rgba(6, 182, 212, 0.2)" }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, mb: 2, color: "#06B6D4" }}>Unscheduled Test Drafts</Typography>
+              <Stack spacing={2}>
+                {unscheduledExams.map((exam) => (
+                  <Paper key={exam.id} sx={{ p: 2, bgcolor: "rgba(0,0,0,0.25)", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <Stack direction={{ xs: "column", md: "row" }} spacing={2} justifyContent="space-between" alignItems={{ xs: "flex-start", md: "center" }}>
+                      <Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>{exam.title}</Typography>
+                        <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.55)" }}>{exam.qs} questions saved • not scheduled yet</Typography>
+                      </Box>
+                      <Stack direction="row" spacing={1.5}>
+                        <Button variant="outlined" size="small" onClick={() => handleOpenDraftInGenerator(exam)} disabled={isLoadingExam} sx={{ borderColor: "rgba(0, 221, 179, 0.35)", color: "#00DDB3", textTransform: "none", borderRadius: "8px", fontWeight: 700 }}>
+                          Open in Generator
+                        </Button>
+                        <Button variant="contained" size="small" onClick={() => navigate(`/teacher/test-creation/${exam.id}`)} sx={{ textTransform: "none", borderRadius: "8px", background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000", fontWeight: 800 }}>
+                          Schedule in Wizard
+                        </Button>
+                        <Button variant="outlined" size="small" onClick={() => navigate(`/teacher/test-editor/${exam.id}`)} sx={{ borderColor: "rgba(6, 182, 212, 0.35)", color: "#06B6D4", textTransform: "none", borderRadius: "8px", fontWeight: 700 }}>
+                          Open Editor
+                        </Button>
+                      </Stack>
+                    </Stack>
+                  </Paper>
+                ))}
+              </Stack>
+            </Card>
+          )}
+
           <Card sx={{ p: 0, borderRadius: "24px", bgcolor: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.05)", overflow: "hidden" }}>
             <List disablePadding>
-              {pastExams.map((exam, idx) => (
+              {scheduledExams.map((exam, idx) => (
                 <React.Fragment key={idx}>
                   <ListItem sx={{ py: 3, px: 4, transition: "0.2s", "&:hover": { bgcolor: "rgba(255,255,255,0.03)" } }}>
                     <Box sx={{ mr: 4, p: 2, bgcolor: "rgba(0, 221, 179, 0.1)", borderRadius: "16px" }}><Database size={24} color="#00DDB3" /></Box>
@@ -658,6 +833,14 @@ export default function QuestionBank() {
                       <Button variant="outlined" size="small" disabled={isLoadingExam} onClick={() => handleViewExamDetails(exam)} sx={{ borderColor: "rgba(0, 221, 179, 0.3)", color: "#00DDB3", textTransform: "none", borderRadius: "8px", fontWeight: 700 }}>
                         View Exam Details
                       </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => navigate(`/teacher/test-editor/${exam.id}`)}
+                        sx={{ borderColor: "rgba(6, 182, 212, 0.35)", color: "#06B6D4", textTransform: "none", borderRadius: "8px", fontWeight: 700 }}
+                      >
+                        Open Test Editor
+                      </Button>
                       <Button variant="outlined" size="small" onClick={() => navigate("/evaluation")} sx={{ borderColor: "rgba(255,255,255,0.15)", color: "#fff", textTransform: "none", borderRadius: "8px" }}>
                         View Student Results
                       </Button>
@@ -666,36 +849,12 @@ export default function QuestionBank() {
                   <Divider sx={{ opacity: 0.05 }} />
                 </React.Fragment>
               ))}
-              {pastExams.length === 0 && (
+              {scheduledExams.length === 0 && (
                 <Box sx={{ textAlign: 'center', mt: 10, opacity: 0.5 }}>
-                  <Typography variant="body1">No past exams found for this course.</Typography>
+                  <Typography variant="body1">No scheduled exams found for this course.</Typography>
                 </Box>
               )}
             </List>
-          </Card>
-        </Box>
-      )}
-
-      {/* TAB 2: EXAM SCHEDULER */}
-      {activeTab === 2 && (
-        <Box sx={{ maxWidth: 800, mx: "auto", mt: 4 }}>
-          <Card sx={{ p: 6, borderRadius: "24px", bgcolor: "rgba(255,255,255,0.02)", border: "1px solid rgba(0, 221, 179, 0.2)", textAlign: 'center' }}>
-            <Avatar sx={{ width: 80, height: 80, bgcolor: "rgba(0, 221, 179, 0.1)", mx: 'auto', mb: 3 }}><Calendar size={40} color="#00DDB3" /></Avatar>
-            <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>Set Exam Live</Typography>
-            <Typography variant="body1" sx={{ color: "rgba(255,255,255,0.5)", mb: 4 }}>Logged in as: <b>{profile?.name}</b></Typography>
-
-            <Grid container spacing={4} sx={{ mt: 2, textAlign: "left" }}>
-              <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth type="date" label="Execution Date" value={schedulingData.date} onChange={(e) => setSchedulingData({...schedulingData, date: e.target.value})} InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
-              <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth type="time" label="Launch Time" value={schedulingData.time} onChange={(e) => setSchedulingData({...schedulingData, time: e.target.value})} InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
-              <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth type="number" label="Duration (Mins)" value={schedulingData.duration} onChange={(e) => setSchedulingData({...schedulingData, duration: parseInt(e.target.value)})} InputLabelProps={{ shrink: true }} sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
-              <Grid size={{ xs: 12 }}><TextField fullWidth label="Assigned Student Batch" value={schedulingData.batch} onChange={(e) => setSchedulingData({...schedulingData, batch: e.target.value})} placeholder="Ex: BSCS-2026-A" sx={{ "& .MuiOutlinedInput-root": { borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)" } }} /></Grid>
-            </Grid>
-
-            <Button fullWidth variant="contained" onClick={handleDeployExam} disabled={isDeploying || officialBank.length === 0 || !selectedCourseId} sx={{ mt: 6, py: 2.5, background: "linear-gradient(135deg, #00DDB3, #06B6D4)", color: "#000", fontWeight: 900, fontSize: "1.1rem", borderRadius: "12px", textTransform: "none" }}>
-              {isDeploying ? "Deploying Assessment..." : "Finalize & Deploy to Students"}
-            </Button>
-            {(!selectedCourseId) && <Typography variant="caption" color="error" sx={{ display: "block", mt: 2, fontWeight: 600 }}>Error: No course mapped to this account. Cannot deploy.</Typography>}
-            {(officialBank.length === 0 && selectedCourseId) && <Typography variant="caption" color="error" sx={{ display: "block", mt: 2, fontWeight: 600 }}>Cannot deploy an empty exam bank. Return to Creation Workspace.</Typography>}
           </Card>
         </Box>
       )}

@@ -38,6 +38,29 @@ router.get('/:attemptId', authenticateToken, async (req, res) => {
 
     const audience = isOwnAttempt ? 'student' : 'teacher';
     const report = assembleReport(audience, rows);
+
+    if (audience === 'student') {
+      const now = new Date();
+      const testEnd = test?.end_time ? new Date(test.end_time) : null;
+      const detailVisible = Boolean(testEnd && now >= testEnd);
+
+      if (!detailVisible) {
+        report.questions = [];
+        report.meta = {
+          ...(report.meta || {}),
+          detailedResultsReleased: false,
+          releaseAt: testEnd ? testEnd.toISOString() : null,
+          message: 'Detailed report unlocks after the scheduled test end time.',
+        };
+      } else {
+        report.meta = {
+          ...(report.meta || {}),
+          detailedResultsReleased: true,
+          releaseAt: testEnd ? testEnd.toISOString() : null,
+        };
+      }
+    }
+
     res.json({ report });
   } catch (error) {
     console.error('Report fetch error:', error);

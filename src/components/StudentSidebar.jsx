@@ -22,12 +22,50 @@ import {
   Menu as MenuIcon,
   Close as CloseIcon,
 } from "@mui/icons-material";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { motion } from "framer-motion";
 
+const ClassMarkerLogo = ({ size = 48, transparent = false }) => (
+  <svg width={size} height={size} viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#0F172A" />
+        <stop offset="100%" stopColor="#020617" />
+      </linearGradient>
+      <linearGradient id="gridGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.1" />
+        <stop offset="100%" stopColor="#00DDB3" stopOpacity="0.0" />
+      </linearGradient>
+      <linearGradient id="leftLegGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#3B82F6" />
+        <stop offset="100%" stopColor="#06B6D4" />
+      </linearGradient>
+      <linearGradient id="rightLegGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#06B6D4" />
+        <stop offset="100%" stopColor="#00DDB3" />
+      </linearGradient>
+      <filter id="foldShadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="-2" dy="6" stdDeviation="4" floodColor="#000" floodOpacity="0.6" />
+      </filter>
+      <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="10" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
+    </defs>
+    {!transparent && <rect width="256" height="256" rx="60" fill="url(#bgGrad)" />}
+    <circle cx="128" cy="128" r="96" fill="none" stroke="url(#gridGrad)" strokeWidth="2" />
+    <circle cx="128" cy="128" r="64" fill="none" stroke="url(#gridGrad)" strokeWidth="1" strokeDasharray="4 6" />
+    <path d="M 56 180 L 92 108 L 140 172 L 200 76" fill="none" stroke="#00DDB3" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" opacity="0.15" filter="url(#glow)" />
+    <path d="M 56 180 L 92 108 L 128 156" fill="none" stroke="url(#leftLegGrad)" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M 104 124 L 140 172 L 200 76" fill="none" stroke="url(#rightLegGrad)" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" filter="url(#foldShadow)" />
+    <circle cx="200" cy="76" r="6" fill="#FFFFFF" filter="url(#glow)" />
+  </svg>
+);
+
 export default function StudentSidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile, signOut } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -38,12 +76,19 @@ export default function StudentSidebar() {
       label: "Dashboard",
       icon: <DashboardIcon />,
       path: "/student/dashboard",
+      isActive: (pathname) => pathname === "/student/dashboard",
     },
-    
+    {
+      label: "Examinations",
+      icon: <AssignmentIcon />,
+      path: "/student/dashboard",
+      isActive: (pathname) => pathname.startsWith("/student/exam"),
+    },
     {
       label: "Results",
       icon: <GradeIcon />,
       path: "/student/results",
+      isActive: (pathname) => pathname.startsWith("/student/results"),
     },
   ];
 
@@ -58,22 +103,30 @@ export default function StudentSidebar() {
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        bgcolor: "rgba(15, 23, 42, 0.95)",
+        bgcolor: "rgba(10, 15, 30, 0.8)",
         backdropFilter: "blur(20px)",
       }}
     >
-      {/* Header */}
-      <Box sx={{ p: 3, display: "flex", alignItems: "center", gap: 2 }}>
+      <Box sx={{ p: 2, mb: 2, display: "flex", alignItems: "center", gap: 1.5, cursor: "pointer" }} onClick={() => navigate("/")}>
+        <ClassMarkerLogo size={36} transparent={true} />
+        <Typography variant="h5" sx={{ fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" }}>
+          Class<Box component="span" sx={{ color: "#00DDB3" }}>Marker</Box>
+        </Typography>
+      </Box>
+
+      <Divider sx={{ borderColor: "rgba(255,255,255,0.1)", mb: 1 }} />
+
+      <Box sx={{ p: 2, display: "flex", alignItems: "center", gap: 2, mb: 1 }}>
         <Box
           sx={{
-            w: 40,
-            h: 40,
+            width: 40,
+            height: 40,
             borderRadius: "50%",
-            background: "linear-gradient(135deg, #A855F7, #7C3AED)",
+            background: "linear-gradient(135deg, #06B6D4, #00DDB3)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#fff",
+            color: "#06121A",
             fontWeight: 800,
           }}
         >
@@ -104,57 +157,58 @@ export default function StudentSidebar() {
 
       {/* Navigation */}
       <List sx={{ flex: 1, py: 2 }}>
-        {menuItems.map((item, index) => (
-          <motion.div
-            key={index}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: index * 0.1 }}
-          >
-            <ListItem
-              disablePadding
-              sx={{
-                px: 1,
-                mb: 1,
-                "&:hover": {
-                  "& .MuiListItemButton-root": {
-                    bgcolor: "rgba(168, 85, 247, 0.2)",
-                  },
-                },
-              }}
+        {menuItems.map((item, index) => {
+          const active = item.isActive(location.pathname);
+          return (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.1 }}
             >
-              <ListItemButton
-                onClick={() => handleNavigation(item.path)}
+              <ListItem
+                disablePadding
                 sx={{
-                  borderRadius: "12px",
-                  color: "rgba(255,255,255,0.7)",
-                  transition: "all 0.3s",
-                  "&:hover": {
-                    color: "#A855F7",
-                  },
+                  px: 1,
+                  mb: 1,
                 }}
               >
-                <ListItemIcon
+                <ListItemButton
+                  onClick={() => handleNavigation(item.path)}
                   sx={{
-                    minWidth: 40,
-                    color: "inherit",
-                  }}
-                >
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText
-                  primary={item.label}
-                  sx={{
-                    "& .MuiTypography-root": {
-                      fontWeight: 600,
-                      fontSize: "0.95rem",
+                    borderRadius: "12px",
+                    color: "rgba(255,255,255,0.7)",
+                    transition: "all 0.3s",
+                    bgcolor: active ? "rgba(0, 221, 179, 0.12)" : "transparent",
+                    border: active ? "1px solid rgba(0, 221, 179, 0.28)" : "1px solid transparent",
+                    "&:hover": {
+                      color: "#00DDB3",
+                      bgcolor: "rgba(255,255,255,0.05)",
                     },
                   }}
-                />
-              </ListItemButton>
-            </ListItem>
-          </motion.div>
-        ))}
+                >
+                  <ListItemIcon
+                    sx={{
+                      minWidth: 40,
+                      color: "inherit",
+                    }}
+                  >
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.label}
+                    sx={{
+                      "& .MuiTypography-root": {
+                        fontWeight: 600,
+                        fontSize: "0.95rem",
+                      },
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            </motion.div>
+          );
+        })}
       </List>
 
       <Divider sx={{ borderColor: "rgba(255,255,255,0.1)" }} />
@@ -174,9 +228,9 @@ export default function StudentSidebar() {
             borderRadius: "12px",
             py: 1.5,
             "&:hover": {
-              borderColor: "#EF4444",
-              color: "#EF4444",
-              bgcolor: "rgba(239, 68, 68, 0.1)",
+              borderColor: "#F87171",
+              color: "#F87171",
+              bgcolor: "rgba(248, 113, 113, 0.12)",
             },
           }}
         >

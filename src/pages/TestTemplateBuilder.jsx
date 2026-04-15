@@ -60,7 +60,7 @@ export default function TestTemplateBuilder() {
     shuffleQs: true,
     shuffleOpts: true,
     allowReview: true,
-    showResultsImmediately: false, // Updated to match DB concept
+    showResultsImmediately: true,
     maxAttempts: 1,
     strictProctoring: false,
     preventTabSwitch: true
@@ -185,7 +185,7 @@ export default function TestTemplateBuilder() {
         shuffle_questions: behavior.shuffleQs,
         shuffle_options: behavior.shuffleOpts,
         allow_review: behavior.allowReview,
-        show_results_immediately: behavior.showResultsImmediately,
+        show_results_immediately: true,
         max_attempts: behavior.maxAttempts,
         strict_proctoring: behavior.strictProctoring,
         prevent_tab_switch: behavior.preventTabSwitch,
@@ -249,7 +249,7 @@ export default function TestTemplateBuilder() {
       shuffleQs: template.shuffle_questions ?? true, 
       shuffleOpts: template.shuffle_options ?? true, 
       allowReview: template.allow_review ?? true, 
-      showResultsImmediately: template.show_results_immediately ?? false, 
+      showResultsImmediately: true,
       lockNav: template.lock_section_navigation ?? false, 
       maxAttempts: template.max_attempts ?? 1, 
       strictProctoring: template.strict_proctoring ?? false, 
@@ -416,13 +416,13 @@ export default function TestTemplateBuilder() {
 
                   <Divider sx={{ mb: 3, opacity: 0.1 }} />
 
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+                  {/* <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
                     <Box>
                       <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Enable Complex Sections</Typography>
                       <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.5)" }}>Divide the test into distinct parts (e.g., Theory vs Code).</Typography>
                     </Box>
                     <Switch checked={hasSections} onChange={(e) => setHasSections(e.target.checked)} sx={{ "& .MuiSwitch-switchBase.Mui-checked": { color: "#00DDB3" }, "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": { bgcolor: "#00DDB3" } }} />
-                  </Box>
+                  </Box> */}
 
                   <Collapse in={hasSections}>
                     <Box sx={{ mt: 3, p: 3, bgcolor: "rgba(0,0,0,0.2)", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }}>
@@ -517,7 +517,7 @@ export default function TestTemplateBuilder() {
                         <Switch checked={behavior?.preventTabSwitch || false} onChange={(e) => handleBehaviorChange("preventTabSwitch", e.target.checked)} color="warning" />
                       </Paper>
                     </Grid>
-                    <Grid item xs={12} sm={6}>
+                    {/* <Grid item xs={12} sm={6}>
                       <Paper sx={{ p: 2.5, bgcolor: "rgba(0,0,0,0.3)", borderRadius: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <Box display="flex" alignItems="center" gap={1.5}>
                           <ShieldAlert size={18} color="#ec4899" />
@@ -525,7 +525,7 @@ export default function TestTemplateBuilder() {
                         </Box>
                         <Switch checked={behavior?.strictProctoring || false} onChange={(e) => handleBehaviorChange("strictProctoring", e.target.checked)} color="secondary" />
                       </Paper>
-                    </Grid>
+                    </Grid> */}
                     <Grid item xs={12} sm={6}>
                       <Paper sx={{ p: 2.5, bgcolor: "rgba(0,0,0,0.3)", borderRadius: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <Box display="flex" alignItems="center" gap={1.5}>
@@ -548,11 +548,12 @@ export default function TestTemplateBuilder() {
                       </Select>
                     </Grid>
                     <Grid item xs={12} sm={6}>
-                      <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.5)", mb: 1, display: "block", ml: 1 }}>When are results shown?</Typography>
-                      <Select fullWidth variant="filled" value={behavior?.showResultsImmediately} onChange={(e) => handleBehaviorChange("showResultsImmediately", e.target.value)} disableUnderline sx={{ borderRadius: "12px", bgcolor: "rgba(0,0,0,0.3)", color: "#fff", fontWeight: 600, border: "1px solid rgba(255,255,255,0.05)" }}>
-                        <MenuItem value={true}>Immediately on Submit</MenuItem>
-                        <MenuItem value={false}>Manual Release by Teacher</MenuItem>
-                      </Select>
+                      <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.5)", mb: 1, display: "block", ml: 1 }}>Result Release Policy</Typography>
+                      <Paper sx={{ p: 2, minHeight: 56, display: "flex", alignItems: "center", bgcolor: "rgba(0,0,0,0.3)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.8)", fontWeight: 600, lineHeight: 1.45 }}>
+                          Score is released immediately on submission. Full report (correct/incorrect answers with explanations) is visible only after test end time.
+                        </Typography>
+                      </Paper>
                     </Grid>
                   </Grid>
                 </Card>

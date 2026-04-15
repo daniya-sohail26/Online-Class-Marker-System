@@ -52,7 +52,9 @@ export default function Sidebar() {
     { text: "Test Template Builder", icon: <Sparkles size={22} />, path: "/teacher/template-builder" },
     { text: "Question Bank", icon: <BookOpen size={22} />, path: "/teacher/question-bank" },
     { text: "Live Monitoring", icon: <Activity size={22} />, path: "/teacher/live-monitoring" },
-    { text: "Evaluation Panel", icon: <BookOpen size={22} />, path: "/teacher/evaluation" }
+    { text: "Evaluation Panel", icon: <BookOpen size={22} />, path: "/teacher/evaluation" },
+    { text: "Test Creation", icon: <BookOpen size={22} />, path: "/teacher/test-creation" },
+    { text: "Test Editor", icon: <BookOpen size={22} />, path: "/teacher/test-editor" }
   ];
 
   return (

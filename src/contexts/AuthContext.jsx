@@ -127,15 +127,24 @@ export function AuthProvider({ children }) {
         }
 
         if (intendedRole === "student") {
-          const { data: studentRow, error: studentErr } = await supabase
+          const { data: studentRows, error: studentErr } = await supabase
             .from("students")
             .select("id, enrollment_number, course_id")
             .eq("user_id", usersId)
-            .maybeSingle();
+            .order("created_at", { ascending: true });
 
           if (studentErr) {
             console.error("[AuthContext] students lookup failed:", studentErr.message);
           }
+
+          const rows = Array.isArray(studentRows) ? studentRows : [];
+          const firstStudent = rows[0] ?? null;
+          const courseIds = Array.from(
+            new Set(rows.map((row) => row?.course_id).filter(Boolean))
+          );
+          const enrollmentNumbers = rows
+            .map((row) => row?.enrollment_number)
+            .filter(Boolean);
 
           if (mounted) {
             setProfile({
@@ -145,9 +154,12 @@ export function AuthProvider({ children }) {
               name:              resolvedName,
               email:             resolvedEmail,
               is_active:         userRow.is_active ?? true,
-              student_record_id: studentRow?.id,
-              enrollment_number: studentRow?.enrollment_number ?? "",
-              course_id:         studentRow?.course_id ?? "",
+              student_record_id: firstStudent?.id,
+              student_record_ids: rows.map((row) => row.id),
+              enrollment_number: firstStudent?.enrollment_number ?? "",
+              enrollment_numbers: enrollmentNumbers,
+              course_id:         firstStudent?.course_id ?? "",
+              course_ids:        courseIds,
             });
           }
           return;
