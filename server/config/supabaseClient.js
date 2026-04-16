@@ -11,18 +11,23 @@ const supabaseAnonKey = isBrowser
   ? import.meta.env.VITE_SUPABASE_ANON_KEY
   : process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 
+// On the server, use the service role key to bypass RLS (auth is handled by middleware)
+const supabaseKey = isBrowser
+  ? supabaseAnonKey
+  : process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey;
+
 // 2. Debugging (Optional: remove once working)
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl || !supabaseKey) {
   console.error(`❌ Supabase keys missing in ${isBrowser ? 'Browser' : 'Server'}!`);
 }
 
 // 3. Initialize Client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+    persistSession: isBrowser,
+    autoRefreshToken: isBrowser,
+    detectSessionInUrl: isBrowser,
     // Only use window.localStorage if we are in a browser
-    storage: isBrowser ? window.localStorage : undefined 
+    storage: isBrowser ? window.localStorage : undefined
   }
 });

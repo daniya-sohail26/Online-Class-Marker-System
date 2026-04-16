@@ -10,7 +10,7 @@ import {
   Save, LayoutTemplate, Clock, Target, Settings,
   Plus, Trash2, ShieldAlert, FileText, Shuffle,
   Eye, Lock, CheckCircle2, ChevronRight, BookOpen, ShieldCheck, GraduationCap, X,
-  AlertCircle, CheckCircle
+  AlertCircle, CheckCircle, Monitor, Smartphone
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -55,7 +55,10 @@ export default function TestTemplateBuilder() {
   /** From this wrong-answer ordinal onward, apply penalty (default 3 = first two wrongs are 0). */
   const [wrongThreshold, setWrongThreshold] = useState(3);
 
-  // --- 4. BEHAVIOR & SECURITY STATE ---
+  // --- 4. PLATFORM ACCESS ---
+  const [allowedPlatform, setAllowedPlatform] = useState("both");
+
+  // --- 5. BEHAVIOR & SECURITY STATE ---
   const [behavior, setBehavior] = useState({
     shuffleQs: true,
     shuffleOpts: true,
@@ -181,6 +184,9 @@ export default function TestTemplateBuilder() {
           ? Math.max(1, parseInt(String(wrongThreshold), 10) || 3)
           : 3,
         
+        // Platform access
+        allowed_platform: allowedPlatform,
+
         // Unpacked the behavior object directly into the specific columns!
         shuffle_questions: behavior.shuffleQs,
         shuffle_options: behavior.shuffleOpts,
@@ -219,6 +225,7 @@ export default function TestTemplateBuilder() {
       setHasNegativeMarking(false);
       setPenalty(0.5);
       setWrongThreshold(3);
+      setAllowedPlatform("both");
       
     } catch (err) {
       const errorMessage = err.message || "Failed to save template. Please check database configuration.";
@@ -243,7 +250,8 @@ export default function TestTemplateBuilder() {
     setHasNegativeMarking(template.negative_marking_enabled ?? false);
     setPenalty(template.negative_marking_penalty ?? 0.5);
     setWrongThreshold(template.negative_marking_wrong_threshold ?? 3);
-    
+    setAllowedPlatform(template.allowed_platform || "both");
+
     // Repack the individual columns back into the behavior state object
     setBehavior({
       shuffleQs: template.shuffle_questions ?? true, 
@@ -540,6 +548,46 @@ export default function TestTemplateBuilder() {
                     </Grid>
                   </Grid>
 
+                  {/* PLATFORM ACCESS */}
+                  <Grid container spacing={3} sx={{ mt: 1 }}>
+                    <Grid item xs={12}>
+                      <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.5)", mb: 1, display: "block", ml: 1 }}>Allowed Platform for Students</Typography>
+                      <Box sx={{ display: "flex", gap: 2 }}>
+                        {[
+                          { value: "web", label: "Web Only", icon: <Monitor size={18} />, desc: "Desktop / Laptop browsers" },
+                          { value: "mobile", label: "Mobile Only", icon: <Smartphone size={18} />, desc: "Phone / Tablet browsers" },
+                          { value: "both", label: "Web & Mobile", icon: null, desc: "Any device" },
+                        ].map((opt) => (
+                          <Paper
+                            key={opt.value}
+                            onClick={() => setAllowedPlatform(opt.value)}
+                            sx={{
+                              flex: 1,
+                              p: 2.5,
+                              bgcolor: allowedPlatform === opt.value ? "rgba(0,221,179,0.1)" : "rgba(0,0,0,0.3)",
+                              border: allowedPlatform === opt.value ? "2px solid #00DDB3" : "2px solid rgba(255,255,255,0.05)",
+                              borderRadius: "16px",
+                              cursor: "pointer",
+                              textAlign: "center",
+                              transition: "all 0.2s ease",
+                              "&:hover": { border: "2px solid rgba(0,221,179,0.4)" },
+                            }}
+                          >
+                            <Box sx={{ display: "flex", justifyContent: "center", mb: 1, color: allowedPlatform === opt.value ? "#00DDB3" : "rgba(255,255,255,0.5)" }}>
+                              {opt.icon || <><Monitor size={18} /><Smartphone size={18} style={{ marginLeft: 4 }} /></>}
+                            </Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: allowedPlatform === opt.value ? "#00DDB3" : "#fff" }}>
+                              {opt.label}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.45)", display: "block", mt: 0.5 }}>
+                              {opt.desc}
+                            </Typography>
+                          </Paper>
+                        ))}
+                      </Box>
+                    </Grid>
+                  </Grid>
+
                   <Grid container spacing={3} sx={{ mt: 1 }}>
                     <Grid item xs={12} sm={6}>
                       <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.5)", mb: 1, display: "block", ml: 1 }}>Max Attempts Allowed</Typography>
@@ -618,6 +666,13 @@ export default function TestTemplateBuilder() {
                               <Typography variant="body2">Attempts: {behavior?.maxAttempts === 999 ? "Unlimited" : (behavior?.maxAttempts || 1)}</Typography>
                             </Box>
 
+                            <Box display="flex" alignItems="center" gap={1.5}>
+                              {allowedPlatform === "mobile" ? <Smartphone size={16} color="#a78bfa" /> : <Monitor size={16} color="#a78bfa" />}
+                              <Typography variant="body2">
+                                Platform: {allowedPlatform === "both" ? "Web & Mobile" : allowedPlatform === "web" ? "Web Only" : "Mobile Only"}
+                              </Typography>
+                            </Box>
+
                             {hasNegativeMarking && (
                               <Box display="flex" alignItems="flex-start" gap={1.5}>
                                 <X size={16} color="#ff4d4d" style={{ marginTop: 2 }} />
@@ -658,7 +713,7 @@ export default function TestTemplateBuilder() {
                       <Box>
                         <Typography sx={{ fontWeight: 700, mb: 0.5 }}>{template.name}</Typography>
                         <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>
-                          {template.template_type} • {template.duration_minutes} mins • {template.total_questions} questions
+                          {template.template_type} • {template.duration_minutes} mins • {template.total_questions} questions • {template.allowed_platform === "both" ? "Web & Mobile" : template.allowed_platform === "web" ? "Web Only" : template.allowed_platform === "mobile" ? "Mobile Only" : "Web & Mobile"}
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', gap: 1 }}>

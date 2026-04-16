@@ -31,6 +31,7 @@ import AdminStudents from "./pages/admin/AdminStudents";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminBulkUpload from "./pages/admin/AdminBulkUpload";
 import AdminAnalytics from "./pages/admin/AdminAnalytics";
+import TeacherDashboard from "./pages/TeacherDashboard";
 import TeacherEvaluationPanel from "./pages/EvaluationDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
 import StudentResults from "./pages/StudentResults";
@@ -80,7 +81,7 @@ function App() {
                       }}
                     >
                       <Routes>
-                        <Route path="dashboard" element={<Dashboard />} />
+                        <Route path="dashboard" element={<TeacherDashboard />} />
                         <Route
                           path="question-bank"
                           element={<QuestionBank />}
