@@ -659,7 +659,7 @@ export default function QuestionBank() {
                       >
                         Open Test Editor
                       </Button>
-                      <Button variant="outlined" size="small" onClick={() => navigate("/evaluation")} sx={{ borderColor: "rgba(255,255,255,0.15)", color: "#fff", textTransform: "none", borderRadius: "8px" }}>
+                      <Button variant="outlined" size="small" onClick={() => navigate("/teacher/evaluation")} sx={{ borderColor: "rgba(255,255,255,0.15)", color: "#fff", textTransform: "none", borderRadius: "8px" }}>
                         View Student Results
                       </Button>
                     </Stack>

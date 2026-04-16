@@ -694,6 +694,12 @@ export default function TeacherDashboard() {
                           </Grid>
                         </Grid>
 
+                        <Chip
+                          label={`Platform: ${template.allowedPlatform || "web-mobile"}`}
+                          size="small"
+                          sx={{ mb: 2, width: "fit-content", bgcolor: "rgba(6, 182, 212, 0.1)", color: "#06B6D4", fontWeight: 700 }}
+                        />
+
                         <Typography variant="caption" sx={{ mt: 'auto', color: "rgba(255,255,255,0.35)", fontWeight: 700 }}>
                           Read-only template view
                         </Typography>
