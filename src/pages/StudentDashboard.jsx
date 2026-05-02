@@ -11,6 +11,7 @@ import {
   TableHead,
   TableRow,
   Chip,
+  Button,
   CircularProgress,
   Alert,
 } from "@mui/material";
@@ -19,7 +20,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Schedule as ScheduleIcon,
   TrendingUp as TrendingUpIcon,
-  PlayArrowRounded as PlayArrowRoundedIcon,
+  Lock as LockIcon,
   Visibility as VisibilityIcon,
   RadioButtonUnchecked as UpcomingIcon,
 } from "@mui/icons-material";
@@ -27,45 +28,37 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../../server/config/supabaseClient";
 import { motion } from "framer-motion";
+import { toPKTDisplay, toPKTDate } from "../utils/pktTime";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const PK_TIMEZONE = "Asia/Karachi";
-
-function formatDateTime(dateLike, timeZone, suffix) {
-  if (!dateLike) return "—";
-  const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
-  if (Number.isNaN(d.getTime())) return "—";
-  return `${d.toLocaleString("en-GB", { timeZone, hour12: false })} ${suffix}`;
-}
-
-function getTestStatus(test, attemptCountByTest) {
-  const now = new Date();
+function getTestStatus(test, submittedIds) {
+  const now   = new Date();
   const start = test.availabilityStart;
-  const end = test.availabilityEnd;
-  const hasStart = Boolean(start);
-  const hasEnd = Boolean(end);
-  const hasValidWindow = hasStart && hasEnd && end > start;
-  const attemptsUsed = Number(attemptCountByTest[test.id] ?? 0);
-  const maxAttempts = Number(test.maxAttempts ?? 1);
-  const attemptsExhausted = Number.isFinite(maxAttempts)
-    ? attemptsUsed >= maxAttempts
-    : false;
+  const end   = test.availabilityEnd;
+  const hasValidWindow = start && end && end > start;
 
-  if (attemptsExhausted) return "completed";
-  if (!hasValidWindow) return "upcoming";
-  if (now > end) return "completed";
-  if (now < start) return "upcoming";
+  if (submittedIds.has(test.id))              return "completed";
+  if (hasValidWindow && now > end)            return "completed";
+  if (hasValidWindow && now < start)          return "upcoming";
   return "active";
 }
 
 function formatWindow(start, end) {
   if (!start || !end) return "—";
-  const startPkt = formatDateTime(start, PK_TIMEZONE, "PKT");
-  const endPkt = formatDateTime(end, PK_TIMEZONE, "PKT");
-  const startUtc = formatDateTime(start, "UTC", "UTC");
-  const endUtc = formatDateTime(end, "UTC", "UTC");
-  return `${startPkt} – ${endPkt} (${startUtc} – ${endUtc})`;
+  return `${toPKTDate(start)} – ${toPKTDate(end)}`;
+}
+
+function detectClientPlatform() {
+  const ua = (typeof navigator !== "undefined" ? navigator.userAgent : "") || "";
+  const isMobileUa = /Mobi|Android|iPhone|iPad|iPod|Windows Phone/i.test(ua);
+  return isMobileUa ? "mobile" : "web";
+}
+
+function platformLabel(platform) {
+  if (platform === "mobile") return "Mobile only";
+  if (platform === "web") return "Web only";
+  return "Web & Mobile";
 }
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────
@@ -201,12 +194,12 @@ function TheadRow({ headers }) {
 export default function StudentDashboard() {
   const navigate    = useNavigate();
   const { profile } = useAuth();
+  const clientPlatform = detectClientPlatform();
 
   const [tests, setTests]       = useState([]);
   const [attempts, setAttempts] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState("");
-  const [nowTick, setNowTick]   = useState(Date.now());
 
   const fetchDashboardData = useCallback(async () => {
     if (!profile?.user_id) return;
@@ -214,27 +207,11 @@ export default function StudentDashboard() {
       setLoading(true);
       setError("");
 
-      const normalizedCourseIds = Array.from(
-        new Set(
-          (Array.isArray(profile?.course_ids) ? profile.course_ids : [profile?.course_id])
-            .filter(Boolean)
-            .map((id) => String(id))
-        )
-      );
-
-      if (normalizedCourseIds.length === 0) {
-        setTests([]);
-        setAttempts([]);
-        setError("No course enrollment found for your student profile.");
-        setLoading(false);
-        return;
-      }
-
-      // 1. Published tests only for student's enrolled courses
+      // 1. Published tests for student's course
       const { data: rawTests, error: testsErr } = await supabase
         .from("tests")
-        .select("id, name, total_marks, is_published, template_id, course_id")
-        .in("course_id", normalizedCourseIds)
+        .select("id, name, total_marks, is_published, template_id, start_time, end_time")
+        .eq("course_id", profile.course_id)
         .eq("is_published", true);
 
       if (testsErr) throw testsErr;
@@ -251,48 +228,29 @@ export default function StudentDashboard() {
       ];
       const { data: templates } = await supabase
         .from("templates")
-        .select("id, duration_minutes, max_attempts")
+        .select("id, duration_minutes, allowed_platform")
         .in("id", templateIds);
 
       const durationMap = {};
-      const maxAttemptsMap = {};
+      const platformMap = {};
       for (const tmpl of templates ?? []) {
         durationMap[tmpl.id] = tmpl.duration_minutes;
-        maxAttemptsMap[tmpl.id] = Number(tmpl.max_attempts ?? 1);
+        platformMap[tmpl.id] = (tmpl.allowed_platform || 'both').toLowerCase();
       }
 
       // 3. Active schedules
       const testIds = rawTests.map((t) => t.id);
-      const { data: schedules, error: schedulesErr } = await supabase
+      const { data: schedules } = await supabase
         .from("test_schedules")
         .select("test_id, availability_start, availability_end, is_active")
         .in("test_id", testIds)
         .eq("is_active", true);
-
-      if (schedulesErr) throw schedulesErr;
-
-      if (!schedules) {
-        console.warn("[Dashboard] No active schedules returned for published tests.");
-      }
-
-      const { data: questionMarksRows, error: questionMarksErr } = await supabase
-        .from("test_questions")
-        .select("test_id, marks")
-        .in("test_id", testIds);
-
-      if (questionMarksErr) throw questionMarksErr;
 
       const scheduleMap = {};
       for (const s of schedules ?? []) {
         const start = new Date(s.availability_start);
         const end   = new Date(s.availability_end);
         if (end > start) scheduleMap[s.test_id] = { start, end };
-      }
-
-      const marksMap = {};
-      for (const row of questionMarksRows ?? []) {
-        const testKey = row.test_id;
-        marksMap[testKey] = (marksMap[testKey] ?? 0) + Number(row.marks ?? 0);
       }
 
       // 4. Student's submitted attempts
@@ -309,13 +267,12 @@ export default function StudentDashboard() {
       const enriched = rawTests.map((t) => ({
         id:                t.id,
         name:              t.name,
-        courseId:          t.course_id,
         durationMinutes:   durationMap[t.template_id] ?? 60,
-        maxAttempts:       maxAttemptsMap[t.template_id] ?? 1,
-        totalMarks:        marksMap[t.id] > 0 ? marksMap[t.id] : t.total_marks,
-        availabilityStart: scheduleMap[t.id]?.start ?? null,
-        availabilityEnd:   scheduleMap[t.id]?.end   ?? null,
+        totalMarks:        t.total_marks,
+        availabilityStart: scheduleMap[t.id]?.start ?? (t.start_time ? new Date(t.start_time) : null),
+        availabilityEnd:   scheduleMap[t.id]?.end   ?? (t.end_time   ? new Date(t.end_time)   : null),
         isPublished:       t.is_published,
+        platform:          platformMap[t.template_id] || 'both',
       }));
 
       setTests(enriched);
@@ -326,37 +283,25 @@ export default function StudentDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [profile?.user_id, profile?.course_id, profile?.course_ids]);
+  }, [profile?.user_id, profile?.course_id]);
 
   useEffect(() => {
     fetchDashboardData();
+    // Auto-refresh every 30 seconds so new/upcoming tests appear without manual reload
+    const interval = setInterval(() => {
+      fetchDashboardData();
+    }, 30000);
+    return () => clearInterval(interval);
   }, [fetchDashboardData]);
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setNowTick(Date.now());
-    }, 1000);
-
-    return () => clearInterval(intervalId);
-  }, []);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const submittedIds    = new Set(attempts.map((a) => a.test_id));
-  const attemptCountByTest = attempts.reduce((acc, a) => {
-    const key = a.test_id;
-    acc[key] = (acc[key] ?? 0) + 1;
-    return acc;
-  }, {});
   const attemptByTestId = {};
   for (const a of attempts) attemptByTestId[a.test_id] = a;
 
-  void nowTick;
-  const activeTests    = tests.filter((t) => getTestStatus(t, attemptCountByTest) === "active");
-  const upcomingTests  = tests.filter((t) => getTestStatus(t, attemptCountByTest) === "upcoming");
-  const completedTests = tests.filter((t) => getTestStatus(t, attemptCountByTest) === "completed");
-  const unscheduledPublishedTests = tests.filter(
-    (t) => t.isPublished && (!t.availabilityStart || !t.availabilityEnd) && !submittedIds.has(t.id),
-  );
+  const activeTests    = tests.filter((t) => getTestStatus(t, submittedIds) === "active");
+  const upcomingTests  = tests.filter((t) => getTestStatus(t, submittedIds) === "upcoming");
+  const completedTests = tests.filter((t) => getTestStatus(t, submittedIds) === "completed");
 
   const avgScore =
     attempts.length > 0
@@ -394,13 +339,6 @@ export default function StudentDashboard() {
         <Alert severity="error" sx={{ mb: 3, borderRadius: "10px" }}>{error}</Alert>
       )}
 
-      {unscheduledPublishedTests.length > 0 && (
-        <Alert severity="warning" sx={{ mb: 3, borderRadius: "10px" }}>
-          {unscheduledPublishedTests.length} published test(s) have missing availability window, so the portal shows "-" for time.
-          Please edit those tests and set both start and end UTC timestamps.
-        </Alert>
-      )}
-
       {/* Stats */}
       <Grid container spacing={2} sx={{ mb: 4 }}>
         {[
@@ -426,31 +364,65 @@ export default function StudentDashboard() {
           ) : (
             <TableContainer>
               <Table>
-                <TableHead><TheadRow headers={["Test Name", "Duration", "Marks", "Window", "Action"]} /></TableHead>
+                <TableHead><TheadRow headers={["Test Name", "Duration", "Marks", "Window", "Platform", "Action"]} /></TableHead>
                 <TableBody>
                   {activeTests.map((test) => (
                     <TableRow key={test.id} sx={{ borderBottom: "1px solid rgba(255,255,255,0.05)", "&:last-child td": { border: 0 }, "&:hover": { bgcolor: "rgba(255,255,255,0.03)" } }}>
+                      {(() => {
+                        const isAllowedOnThisDevice = test.platform === 'both' || test.platform === clientPlatform;
+                        return (
+                          <>
                       <TableCell sx={{ color: "#fff", fontWeight: 600 }}>{test.name}</TableCell>
                       <TableCell sx={{ color: "rgba(255,255,255,0.6)" }}>{test.durationMinutes} min</TableCell>
                       <TableCell sx={{ color: "rgba(255,255,255,0.6)" }}>{test.totalMarks ?? "—"}</TableCell>
                       <TableCell sx={{ color: "rgba(255,255,255,0.5)", fontSize: "13px" }}>{formatWindow(test.availabilityStart, test.availabilityEnd)}</TableCell>
                       <TableCell>
                         <Chip
-                          icon={<PlayArrowRoundedIcon sx={{ fontSize: "14px !important" }} />}
-                          label="Start Exam"
+                          label={platformLabel(test.platform)}
                           size="small"
-                          onClick={() => navigate(`/student/exam/${test.id}`)}
                           sx={{
-                            bgcolor: "rgba(16,185,129,0.1)",
-                            color: "#10B981",
+                            bgcolor: test.platform === "both" ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.1)",
+                            color: test.platform === "both" ? "#10B981" : "#F59E0B",
                             fontWeight: 700,
                             fontSize: "11px",
-                            border: "1px solid rgba(16,185,129,0.3)",
-                            cursor: "pointer",
-                            "&:hover": { bgcolor: "rgba(16,185,129,0.2)" },
+                            border: `1px solid ${test.platform === "both" ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.25)"}`,
                           }}
                         />
                       </TableCell>
+                      <TableCell>
+                        {isAllowedOnThisDevice ? (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => navigate(`/student/exam/${test.id}`)}
+                            sx={{
+                              background: "linear-gradient(135deg, #10B981 0%, #06B6D4 100%)",
+                              color: "#fff",
+                              fontWeight: 700,
+                              textTransform: "none",
+                              fontSize: "12px",
+                              borderRadius: "8px",
+                              px: 2,
+                              py: 0.5,
+                              boxShadow: "0 2px 8px rgba(16,185,129,0.3)",
+                              '&:hover': { transform: "translateY(-1px)", boxShadow: "0 4px 12px rgba(16,185,129,0.4)" },
+                              transition: "all 0.2s ease",
+                            }}
+                          >
+                            Start Test
+                          </Button>
+                        ) : (
+                          <Chip
+                            icon={<LockIcon sx={{ fontSize: "12px !important" }} />}
+                            label={test.platform === "mobile" ? "Open on mobile" : "Open on web/desktop"}
+                            size="small"
+                            sx={{ bgcolor: "rgba(245,158,11,0.1)", color: "#F59E0B", fontWeight: 600, fontSize: "11px", border: "1px solid rgba(245,158,11,0.25)" }}
+                          />
+                        )}
+                      </TableCell>
+                          </>
+                        );
+                      })()}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -475,9 +447,7 @@ export default function StudentDashboard() {
                       <TableCell sx={{ color: "rgba(255,255,255,0.6)" }}>{test.durationMinutes} min</TableCell>
                       <TableCell sx={{ color: "rgba(255,255,255,0.6)" }}>{test.totalMarks ?? "—"}</TableCell>
                       <TableCell sx={{ color: "#F59E0B", fontSize: "13px", fontWeight: 500 }}>
-                        {test.availabilityStart
-                          ? `${formatDateTime(test.availabilityStart, PK_TIMEZONE, "PKT")} (${formatDateTime(test.availabilityStart, "UTC", "UTC")})`
-                          : "—"}
+                        {test.availabilityStart ? toPKTDisplay(test.availabilityStart) : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -522,7 +492,7 @@ export default function StudentDashboard() {
                           )}
                         </TableCell>
                         <TableCell sx={{ color: "rgba(255,255,255,0.5)", fontSize: "13px" }}>
-                          {attempt?.submitted_at ? new Date(attempt.submitted_at).toLocaleDateString() : "—"}
+                          {attempt?.submitted_at ? toPKTDisplay(attempt.submitted_at) : "—"}
                         </TableCell>
                         <TableCell>
                           {attempt ? (

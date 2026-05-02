@@ -28,56 +28,11 @@ import { motion } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Trash2, Eye, Filter, Save } from 'lucide-react';
 import { getCourseQuestions } from '../api/questionApi.js';
-import { createTest, deleteTest, getTestById, updateTest } from '../api/testApi.js';
+import { createTest, getTestById, updateTest } from '../api/testApi.js';
 import { getAllCourses } from '../api/courseApi.js';
 import { getActiveTemplates } from '../api/templateApi.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
-
-const PK_TIMEZONE = 'Asia/Karachi';
-
-function toUtcInputValue(isoString) {
-  if (!isoString) return '';
-  const d = new Date(isoString);
-  if (Number.isNaN(d.getTime())) return '';
-
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const min = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
-}
-
-function utcInputToIso(inputValue) {
-  if (!inputValue) return '';
-  const d = new Date(`${inputValue}:00Z`);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString();
-}
-
-function formatUtcDisplay(inputValue) {
-  if (!inputValue) return '';
-  const d = new Date(`${inputValue}:00Z`);
-  if (Number.isNaN(d.getTime())) return inputValue;
-  return d.toLocaleString('en-GB', { timeZone: 'UTC', hour12: false }) + ' UTC';
-}
-
-function formatPktFromUtcInput(inputValue) {
-  if (!inputValue) return '';
-  const d = new Date(`${inputValue}:00Z`);
-  if (Number.isNaN(d.getTime())) return inputValue;
-  return d.toLocaleString('en-PK', { timeZone: PK_TIMEZONE, hour12: false });
-}
-
-function addMinutesToUtcInput(inputValue, minutes) {
-  if (!inputValue) return '';
-  const parsed = new Date(`${inputValue}:00Z`);
-  if (Number.isNaN(parsed.getTime())) return '';
-  const duration = Math.max(Number(minutes ?? 0), 0);
-  const next = new Date(parsed.getTime() + duration * 60 * 1000);
-
-  return toUtcInputValue(next.toISOString());
-}
+import { toPKTDisplay, toPKTInputValue, pktInputToUTC } from '../utils/pktTime.js';
 
 export default function TestCreationWizard() {
   const { testId } = useParams();
@@ -86,14 +41,9 @@ export default function TestCreationWizard() {
   const { profile } = useAuth();
   const isEditing = !!testId;
   const prefill = location.state?.prefill || null;
-  // Track if we're editing a draft (unpublished test) vs. published test
-  const [isDraftBeingPublished, setIsDraftBeingPublished] = useState(false);
-  const [skipQuestionStep, setSkipQuestionStep] = useState(false);
   // --- STEPPER STATE ---
   const [activeStep, setActiveStep] = useState(0);
-  const steps = skipQuestionStep
-    ? ['Basic Info', 'Schedule', isEditing ? 'Review & Update' : 'Review & Publish']
-    : ['Basic Info', 'Select Questions', 'Schedule', isEditing ? 'Review & Update' : 'Review & Publish'];
+  const steps = ['Basic Info', 'Schedule', isEditing ? 'Review & Update' : 'Review & Publish'];
 
   // --- FORM STATE ---
   const [testName, setTestName] = useState('');
@@ -125,13 +75,6 @@ export default function TestCreationWizard() {
   const [success, setSuccess] = useState('');
   const [previewQuestion, setPreviewQuestion] = useState(null);
 
-  const selectedTemplateObject = templates.find(template => template.id === selectedTemplate);
-  const templateQuestionLimit = Number(selectedTemplateObject?.total_questions || 0);
-  const templateDurationMinutes = Math.max(
-    Number(selectedTemplateObject?.duration ?? selectedTemplateObject?.duration_minutes ?? duration ?? 60),
-    1,
-  );
-
   // --- FETCH INITIAL DATA ---
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -155,19 +98,11 @@ export default function TestCreationWizard() {
           setSelectedQuestions(testData.questionIds || []);
           console.log("Set selectedQuestions to:", testData.questionIds);
 
-          // Track if this is a draft being published (unpublished test)
-          setIsDraftBeingPublished(testData.is_published === false);
-
           if (testData.startTime || testData.start_time) {
-            setStartTime(toUtcInputValue(testData.startTime || testData.start_time));
+            setStartTime(toPKTInputValue(testData.startTime || testData.start_time));
           }
           if (testData.endTime || testData.end_time) {
-            setEndTime(toUtcInputValue(testData.endTime || testData.end_time));
-          }
-
-          if (testData.is_published === false && Array.isArray(testData.questionIds) && testData.questionIds.length > 0) {
-            setSkipQuestionStep(true);
-            setActiveStep(0);
+            setEndTime(toPKTInputValue(testData.endTime || testData.end_time));
           }
         } else {
           const mappedCourseId = profile?.course_id || '';
@@ -183,12 +118,9 @@ export default function TestCreationWizard() {
           if (prefill?.templateId) setSelectedTemplate(prefill.templateId);
           if (Array.isArray(prefill?.questionIds) && prefill.questionIds.length > 0) {
             setSelectedQuestions(prefill.questionIds);
-            if (prefill?.source === 'question-bank') {
-              setSkipQuestionStep(true);
-            }
           }
-          if (prefill?.startTime) setStartTime(toUtcInputValue(prefill.startTime));
-          if (prefill?.endTime) setEndTime(toUtcInputValue(prefill.endTime));
+          if (prefill?.startTime) setStartTime(prefill.startTime);
+          if (prefill?.endTime) setEndTime(prefill.endTime);
           if (prefill?.duration) setDuration(prefill.duration);
         }
       } catch (err) {
@@ -204,10 +136,11 @@ export default function TestCreationWizard() {
     fetchInitialData();
   }, [testId, isEditing, prefill, profile?.course_id]);
 
-  // --- FETCH QUESTIONS WHEN COURSE CHANGES ---
+  // --- AUTO-SELECT ALL QUESTIONS WHEN COURSE CHANGES ---
   useEffect(() => {
     if (!selectedCourse) {
       setAvailableQuestions([]);
+      setSelectedQuestions([]);
       return;
     }
 
@@ -216,7 +149,12 @@ export default function TestCreationWizard() {
       setError('');
       try {
         const response = await getCourseQuestions(selectedCourse, questionFilters);
-        setAvailableQuestions(response.questions || []);
+        const qs = response.questions || [];
+        setAvailableQuestions(qs);
+        // Auto-select all questions (skip if editing and already has selections)
+        if (!isEditing || selectedQuestions.length === 0) {
+          setSelectedQuestions(qs.map(q => q.id));
+        }
       } catch (err) {
         setError(`Failed to load questions: ${err.message}`);
         console.error(err);
@@ -228,22 +166,28 @@ export default function TestCreationWizard() {
     fetchQuestions();
   }, [selectedCourse, questionFilters]);
 
+  // --- AUTO-COMPUTE END TIME FROM START + DURATION ---
   useEffect(() => {
-    if (!selectedTemplateObject) return;
-    setDuration(templateDurationMinutes);
-  }, [selectedTemplateObject?.id, templateDurationMinutes]);
-
-  useEffect(() => {
-    if (!startTime) {
-      setEndTime('');
-      return;
-    }
-
-    const computedEnd = addMinutesToUtcInput(startTime, templateDurationMinutes);
-    if (computedEnd) {
-      setEndTime(computedEnd);
-    }
-  }, [startTime, templateDurationMinutes]);
+    if (!startTime) return;
+    // Get duration from selected template, fallback to manual duration state
+    const tmpl = templates.find(t => t.id === selectedTemplate);
+    const mins = tmpl?.duration || tmpl?.duration_minutes || duration || 60;
+    // startTime is a datetime-local string like "2026-05-02T11:15"
+    const [datePart, timePart] = startTime.split('T');
+    if (!datePart || !timePart) return;
+    const [y, m, d] = datePart.split('-').map(Number);
+    const [h, min] = timePart.split(':').map(Number);
+    // Add duration in minutes
+    const startMs = Date.UTC(y, m - 1, d, h, min);
+    const endMs = startMs + mins * 60 * 1000;
+    const endDate = new Date(endMs);
+    const ey = endDate.getUTCFullYear();
+    const em = String(endDate.getUTCMonth() + 1).padStart(2, '0');
+    const ed = String(endDate.getUTCDate()).padStart(2, '0');
+    const eh = String(endDate.getUTCHours()).padStart(2, '0');
+    const emin = String(endDate.getUTCMinutes()).padStart(2, '0');
+    setEndTime(`${ey}-${em}-${ed}T${eh}:${emin}`);
+  }, [startTime, selectedTemplate, templates, duration]);
 
   // --- HANDLERS ---
   const handleSelectQuestion = (questionId) => {
@@ -251,11 +195,6 @@ export default function TestCreationWizard() {
       const isAlreadySelected = prev.some(id => String(id) === String(questionId));
       if (isAlreadySelected) {
         return prev.filter(id => String(id) !== String(questionId));
-      }
-
-      if (templateQuestionLimit > 0 && prev.length >= templateQuestionLimit) {
-        setError(`Template allows only ${templateQuestionLimit} questions.`);
-        return prev;
       } else {
         return [...prev, questionId];
       }
@@ -292,43 +231,24 @@ export default function TestCreationWizard() {
   };
 
   const handleNext = () => {
-    setError('');
-
+    // Validate current step
     if (activeStep === 0) {
-      // Basic Info validation
       if (!testName || !selectedCourse || !selectedTemplate) {
         setError('Please fill in Name, Course, and Template');
         return;
       }
-    } else if (skipQuestionStep) {
-      // When skipping questions: step 1 = Schedule
-      if (activeStep === 1) {
-        if (!startTime || !endTime) {
-          setError('Please set start and end times');
-          return;
-        }
+      if (selectedQuestions.length === 0) {
+        setError('No questions available for this course. Please add questions first.');
+        return;
       }
-    } else {
-      // Normal flow: step 1 = Questions, step 2 = Schedule
-      if (activeStep === 1) {
-        // Select Questions validation
-        if (selectedQuestions.length === 0) {
-          setError('Please select at least one question');
-          return;
-        }
-        if (templateQuestionLimit > 0 && selectedQuestions.length > templateQuestionLimit) {
-          setError(`Template allows only ${templateQuestionLimit} questions.`);
-          return;
-        }
-      } else if (activeStep === 2) {
-        // Schedule validation
-        if (!startTime || !endTime) {
-          setError('Please set start and end times');
-          return;
-        }
+    } else if (activeStep === 1) {
+      if (!startTime || !endTime) {
+        setError('Please set the start time');
+        return;
       }
     }
 
+    setError('');
     setActiveStep(prev => prev + 1);
   };
 
@@ -339,477 +259,222 @@ export default function TestCreationWizard() {
   const handlePublish = async () => {
     setLoading(true);
     try {
-      if (!testName || !selectedCourse || !selectedTemplate) {
-        setError('Please fill in Name, Course, and Template');
-        return;
-      }
-
-      if (selectedQuestions.length === 0) {
-        setError('Please select at least one question');
-        return;
-      }
-
-      if (templateQuestionLimit > 0 && selectedQuestions.length > templateQuestionLimit) {
-        setError(`Template allows only ${templateQuestionLimit} questions.`);
-        return;
-      }
-
-      if (!startTime || !endTime) {
-        setError('Please set start and end times');
-        return;
-      }
-
-      const payload = {
+      const testData = {
         name: testName,
         courseId: selectedCourse,
         templateId: selectedTemplate,
         questionIds: selectedQuestions,
-        startTime: utcInputToIso(startTime),
-        endTime: utcInputToIso(endTime),
+        startTime: pktInputToUTC(startTime),
+        endTime: pktInputToUTC(endTime),
         isPublished: true,
       };
 
-      // Only update if editing a published test (not a draft)
-      // Drafts should create a NEW separate test entry
-      if (isEditing && !isDraftBeingPublished) {
-        await updateTest(testId, payload);
-        setSuccess('Test updated successfully');
+      if (isEditing) {
+        await updateTest(testId, testData);
+        setSuccess('Test updated successfully!');
       } else {
-        // Always create a new test (whether it's new or publishing a draft)
-        await createTest(payload);
-        setSuccess('Test created successfully');
+        await createTest(testData);
+        setSuccess('Test created and published successfully!');
       }
 
-      // If this is a draft being published, remove the old draft row so it cannot reappear.
-      if (isEditing && isDraftBeingPublished) {
-        try {
-          await deleteTest(testId);
-        } catch (err) {
-          console.log('Note: Could not delete old draft, but new scheduled test was created');
-        }
-      }
       setTimeout(() => {
         navigate('/teacher/dashboard');
-      }, 1200);
+      }, 2000);
     } catch (err) {
-      console.error('Failed to save test:', err);
-      setError(err?.response?.data?.message || err.message || 'Failed to save test');
+      setError(`Failed to ${isEditing ? 'update' : 'create'} test: ${err.message}`);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  const renderBasicInfo = () => (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h6" sx={{ mb: 3 }}>
-        Basic Test Information
-      </Typography>
+  // --- RENDER STEP CONTENT ---
+  const renderStepContent = () => {
+    switch (activeStep) {
+      case 0:
+        return (
+          <Box sx={{ p: 3 }}>
+            <Typography variant="h6" sx={{ mb: 3 }}>
+              Basic Test Information
+            </Typography>
 
-      <TextField
-        fullWidth
-        label="Test Name"
-        value={testName}
-        onChange={e => setTestName(e.target.value)}
-        placeholder="e.g., React Fundamentals Quiz"
-        sx={{ mb: 2 }}
-      />
+            <TextField
+              fullWidth
+              label="Test Name"
+              value={testName}
+              onChange={e => setTestName(e.target.value)}
+              placeholder="e.g., React Fundamentals Quiz"
+              sx={{ mb: 2 }}
+            />
 
-      <FormControl fullWidth sx={{ mb: 3 }}>
-        <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Select Course</InputLabel>
-        <Select
-          value={selectedCourse}
-          label="Select Course"
-          onChange={e => setSelectedCourse(e.target.value)}
-          disabled={isCourseLocked}
-          sx={{ color: "#fff" }}
-        >
-          {courses.map(course => (
-            <MenuItem key={course.id} value={course.id}>
-              {course.name}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Select Course</InputLabel>
+              <Select
+                value={selectedCourse}
+                label="Select Course"
+                onChange={e => setSelectedCourse(e.target.value)}
+                disabled={isCourseLocked}
+                sx={{ color: "#fff" }}
+              >
+                {courses.map(course => (
+                  <MenuItem key={course.id} value={course.id}>
+                    {course.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
-      <FormControl fullWidth sx={{ mb: 3 }}>
-        <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Select Template</InputLabel>
-        <Select
-          value={selectedTemplate}
-          label="Select Template"
-          onChange={e => setSelectedTemplate(e.target.value)}
-          sx={{ color: "#fff" }}
-        >
-          {templates.map(template => (
-            <MenuItem key={template.id} value={template.id}>
-              {template.name} ({template.type})
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Select Template</InputLabel>
+              <Select
+                value={selectedTemplate}
+                label="Select Template"
+                onChange={e => setSelectedTemplate(e.target.value)}
+                sx={{ color: "#fff" }}
+              >
+                {templates.map(template => (
+                  <MenuItem key={template.id} value={template.id}>
+                    {template.name} ({template.type})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
-      {selectedCourse && (
-        <Alert
-          severity="info"
-          sx={{
-            bgcolor: "rgba(6, 182, 212, 0.05)",
-            color: "#06B6D4",
-            border: "1px solid rgba(6, 182, 212, 0.2)",
-            borderRadius: "12px"
-          }}
-        >
-          Questions will be filtered to show only those from{' '}
-          <strong>{courses.find(c => c.id === selectedCourse)?.name}</strong>
-        </Alert>
-      )}
-      {isCourseLocked && (
-        <Alert
-          severity="info"
-          sx={{
-            mt: 2,
-            bgcolor: "rgba(0, 221, 179, 0.05)",
-            color: "#00DDB3",
-            border: "1px solid rgba(0, 221, 179, 0.2)",
-            borderRadius: "12px"
-          }}
-        >
-          Course is locked to your mapped teacher course for consistent test-course assignment.
-        </Alert>
-      )}
-    </Box>
-  );
+            {selectedCourse && (
+              <Alert
+                severity="info"
+                sx={{
+                  bgcolor: "rgba(6, 182, 212, 0.05)",
+                  color: "#06B6D4",
+                  border: "1px solid rgba(6, 182, 212, 0.2)",
+                  borderRadius: "12px"
+                }}
+              >
+                Questions will be filtered to show only those from{' '}
+                <strong>{courses.find(c => c.id === selectedCourse)?.name}</strong>
+              </Alert>
+            )}
+            {isCourseLocked && (
+              <Alert
+                severity="info"
+                sx={{
+                  mt: 2,
+                  bgcolor: "rgba(0, 221, 179, 0.05)",
+                  color: "#00DDB3",
+                  border: "1px solid rgba(0, 221, 179, 0.2)",
+                  borderRadius: "12px"
+                }}
+              >
+                Course is locked to your mapped teacher course for consistent test-course assignment.
+              </Alert>
+            )}
+          </Box>
+        );
 
-  const renderSelectQuestions = () => (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h6" sx={{ mb: 3 }}>
-        Select Questions for Test
-      </Typography>
+      case 1:
+        return (
+          <Box sx={{ p: 3 }}>
+            <Typography variant="h6" sx={{ mb: 3 }}>
+              Schedule Test
+            </Typography>
 
-            {/* Questions continuing... */}
-      {/* Filters */}
-      <Box sx={{
-        p: 3,
-        mb: 4,
-        bgcolor: "rgba(255, 255, 255, 0.03)",
-        borderRadius: "20px",
-        border: "1px solid rgba(255, 255, 255, 0.08)",
-        backdropFilter: "blur(10px)"
-      }}>
-        <Typography variant="subtitle2" sx={{ color: "rgba(255,255,255,0.5)", mb: 2, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", fontSize: "0.75rem" }}>
-          Refine Question Bank
-        </Typography>
-              <Grid container spacing={3}>
+            <Alert severity="info" sx={{ mb: 3, borderRadius: "12px" }}>
+              {selectedQuestions.length} questions auto-selected from course question bank
+            </Alert>
+
+            <TextField
+              fullWidth
+              label="Start Date & Time (Pakistan Standard Time)"
+              type="datetime-local"
+              value={startTime}
+              onChange={e => setStartTime(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              helperText="Enter time in PKT (UTC+5). Stored as UTC."
+              sx={{ mb: 3 }}
+            />
+
+            <TextField
+              fullWidth
+              label="End Date & Time (auto-calculated from duration)"
+              type="datetime-local"
+              value={endTime}
+              InputLabelProps={{ shrink: true }}
+              helperText={`Auto-filled: start time + ${(() => { const tmpl = templates.find(t => t.id === selectedTemplate); return tmpl?.duration || tmpl?.duration_minutes || duration || 60; })()} min duration from template`}
+              disabled
+              sx={{ mb: 3, '& .MuiInputBase-input.Mui-disabled': { WebkitTextFillColor: 'rgba(255,255,255,0.5)' } }}
+            />
+
+            <Alert severity="info" sx={{ borderRadius: "12px" }}>
+              Test will be available from {startTime ? toPKTDisplay(pktInputToUTC(startTime)) : 'start time'} to{' '}
+              {endTime ? toPKTDisplay(pktInputToUTC(endTime)) : 'end time'}
+            </Alert>
+          </Box>
+        );
+
+      case 2:
+        return (
+          <Box sx={{ p: 3 }}>
+            <Typography variant="h6" sx={{ mb: 3 }}>
+              Review & Publish
+            </Typography>
+
+            <Box sx={{
+              p: 4,
+              bgcolor: "rgba(0,0,0,0.3)",
+              borderRadius: "24px",
+              border: "1px solid rgba(255,255,255,0.05)",
+              mb: 4
+            }}>
+              <Grid container spacing={4}>
                 <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth variant="filled" sx={{ "& .MuiFilledInput-root": { bgcolor: "rgba(0,0,0,0.3)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)" } }}>
-                    <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Source Type</InputLabel>
-                    <Select
-                      value={questionFilters.sourceType}
-                      label="Source Type"
-                      disableUnderline
-                      sx={{ color: "#fff", fontWeight: 600 }}
-                      onChange={e =>
-                        setQuestionFilters(prev => ({
-                          ...prev,
-                          sourceType: e.target.value,
-                        }))
-                      }
-                    >
-                      <MenuItem value="">All Sources</MenuItem>
-                      <MenuItem value="AI">AI Generated</MenuItem>
-                      <MenuItem value="MANUAL">Manual</MenuItem>
-                      <MenuItem value="HYBRID">Hybrid</MenuItem>
-                    </Select>
-                  </FormControl>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>TEST NAME</Typography>
+                    <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{testName}</Typography>
+                  </Box>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>COURSE</Typography>
+                    <Typography variant="body1" sx={{ color: "#06B6D4", fontWeight: 700 }}>{courses.find(c => c.id === selectedCourse)?.name}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>TEMPLATE</Typography>
+                    <Typography variant="body1" sx={{ color: "#00DDB3", fontWeight: 700 }}>{templates.find(t => t.id === selectedTemplate)?.name || 'None Selected'}</Typography>
+                  </Box>
                 </Grid>
 
                 <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth variant="filled" sx={{ "& .MuiFilledInput-root": { bgcolor: "rgba(0,0,0,0.3)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)" } }}>
-                    <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Difficulty</InputLabel>
-                    <Select
-                      value={questionFilters.difficulty}
-                      label="Difficulty"
-                      disableUnderline
-                      sx={{ color: "#fff", fontWeight: 600 }}
-                      onChange={e =>
-                        setQuestionFilters(prev => ({
-                          ...prev,
-                          difficulty: e.target.value,
-                        }))
-                      }
-                    >
-                      <MenuItem value="">All Difficulties</MenuItem>
-                      <MenuItem value="Easy">Easy</MenuItem>
-                      <MenuItem value="Medium">Medium</MenuItem>
-                      <MenuItem value="Hard">Hard</MenuItem>
-                    </Select>
-                  </FormControl>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>QUESTIONS</Typography>
+                    <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{selectedQuestions.length} questions selected</Typography>
+                  </Box>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>SCHEDULE</Typography>
+                    <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
+                      {startTime ? toPKTDisplay(pktInputToUTC(startTime)) : '—'} to {endTime ? toPKTDisplay(pktInputToUTC(endTime)) : '—'}
+                    </Typography>
+                  </Box>
                 </Grid>
               </Grid>
             </Box>
 
-            {/* Select All Checkbox */}
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={availableQuestions.length > 0 && availableQuestions.every(q => selectedQuestions.some(sqId => String(sqId) === String(q.id)))}
-                  onChange={handleSelectAllQuestions}
-                  sx={{
-                    color: "rgba(255,255,255,0.3)",
-                    '&.Mui-checked': { color: "#00DDB3" },
-                    '&.MuiCheckbox-indeterminate': { color: "#00DDB3" }
-                  }}
-                />
-              }
-              label={
-                <Typography sx={{ color: "rgba(255,255,255,0.7)", fontWeight: 600 }}>
-                  Select All Questions ({availableQuestions.length} available)
-                </Typography>
-              }
-              sx={{ mb: 3 }}
-            />
-
-            {/* Questions List */}
-            {loadingQuestions ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                <CircularProgress />
-              </Box>
-            ) : availableQuestions.length === 0 ? (
-              <Alert
-                severity="warning"
-                sx={{
-                  bgcolor: "rgba(255, 152, 0, 0.05)",
-                  color: "#ff9800",
-                  border: "1px solid rgba(255, 152, 0, 0.2)",
-                  borderRadius: "12px",
-                  "& .MuiAlert-icon": { color: "#ff9800" }
-                }}
-              >
-                No questions found with the current filters. Try changing filters or adding questions to this course.
-              </Alert>
-            ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {availableQuestions.map(question => {
-                  const isSelected = selectedQuestions.some(sqId => String(sqId) === String(question.id));
-                  const selectionLocked = !isSelected && templateQuestionLimit > 0 && selectedQuestions.length >= templateQuestionLimit;
-                  return (
-                    <Card
-                      key={question.id}
-                      onClick={() => handleSelectQuestion(question.id)}
-                      sx={{
-                        p: 3,
-                        cursor: selectionLocked ? 'not-allowed' : 'pointer',
-                        border: isSelected
-                          ? '2px solid #00DDB3'
-                          : '1px solid rgba(255,255,255,0.05)',
-                        bgcolor: isSelected
-                          ? 'rgba(0, 221, 179, 0.05)'
-                          : selectionLocked
-                            ? 'rgba(255,255,255,0.01)'
-                            : 'rgba(255, 255, 255, 0.02)',
-                        borderRadius: "16px",
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        '&:hover': {
-                          bgcolor: "rgba(255,255,255,0.04)",
-                          transform: "translateY(-2px)",
-                          boxShadow: "0 10px 30px rgba(0,0,0,0.5)"
-                        },
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
-                        <Checkbox
-                          checked={isSelected}
-                          disabled={selectionLocked}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={() => handleSelectQuestion(question.id)}
-                          sx={{
-                            color: "rgba(255,255,255,0.3)",
-                            '&.Mui-checked': { color: "#00DDB3" }
-                          }}
-                        />
-
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="body1" sx={{ mb: 2, color: "#fff", fontWeight: 500 }}>
-                            {question.question_text}
-                          </Typography>
-
-                          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-                            <Chip
-                              label={question.difficulty?.charAt(0).toUpperCase() + question.difficulty?.slice(1)}
-                              size="small"
-                              sx={{
-                                bgcolor: "rgba(255,255,255,0.05)",
-                                color: "rgba(255,255,255,0.7)",
-                                border: "1px solid rgba(255,255,255,0.1)",
-                                fontWeight: 700,
-                                fontSize: "0.7rem",
-                                textTransform: "uppercase"
-                              }}
-                            />
-                            <Chip
-                              label={question.source_type}
-                              size="small"
-                              sx={{
-                                bgcolor: "rgba(255,255,255,0.05)",
-                                color: "rgba(255,255,255,0.7)",
-                                border: "1px solid rgba(255,255,255,0.1)",
-                                fontWeight: 700,
-                                fontSize: "0.7rem"
-                              }}
-                            />
-                          </Box>
-                        </Box>
-
-                        <Button
-                          size="small"
-                          startIcon={<Eye size={16} />}
-                          disabled={selectionLocked}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPreviewQuestion(question);
-                          }}
-                          sx={{
-                            color: "#00DDB3",
-                            textTransform: "none",
-                            fontWeight: 700,
-                            '&:hover': { bgcolor: "rgba(0, 221, 179, 0.1)" }
-                          }}
-                        >
-                          Preview
-                        </Button>
-                      </Box>
-                    </Card>
-                  )
-                })}
-              </Box>
-            )}
-
-            <Typography variant="body2" sx={{ mt: 2, color: 'text.secondary' }}>
-              Selected: {selectedQuestions.length} questions{templateQuestionLimit > 0 ? ` / ${templateQuestionLimit} allowed by template` : ''}
-            </Typography>
+            <Alert
+              severity="success"
+              icon={<Plus size={20} />}
+              sx={{
+                bgcolor: "rgba(0, 221, 179, 0.05)",
+                color: "#00DDB3",
+                border: "1px solid rgba(0, 221, 179, 0.2)",
+                borderRadius: "16px",
+                "& .MuiAlert-icon": { color: "#00DDB3" }
+              }}
+            >
+              Ready to publish! Click "Publish Test" to make it available to students.
+            </Alert>
           </Box>
-  );
+        );
 
-  const renderSchedule = () => (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h6" sx={{ mb: 3 }}>
-        Schedule Test
-      </Typography>
-
-      <TextField
-        fullWidth
-        label="Start Date & Time (UTC)"
-        type="datetime-local"
-        value={startTime}
-        onChange={e => setStartTime(e.target.value)}
-        InputLabelProps={{ shrink: true }}
-        sx={{ mb: 2 }}
-      />
-
-      <TextField
-        fullWidth
-        label="End Date & Time (UTC, auto)"
-        type="datetime-local"
-        value={endTime}
-        onChange={() => {}}
-        disabled
-        InputLabelProps={{ shrink: true }}
-        sx={{ mb: 2 }}
-      />
-
-      <TextField
-        fullWidth
-        label="Duration (minutes, from template)"
-        type="number"
-        value={duration}
-        onChange={() => {}}
-        disabled
-        sx={{ mb: 2 }}
-      />
-
-      <Alert severity="info">
-        End time is auto-calculated from template duration in UTC: {formatUtcDisplay(startTime) || 'start time'} to{' '}
-        {formatUtcDisplay(endTime) || 'end time'}.
-        {' '}Pakistan view: {formatPktFromUtcInput(startTime) || 'start time'} to {formatPktFromUtcInput(endTime) || 'end time'} ({PK_TIMEZONE})
-      </Alert>
-    </Box>
-  );
-
-  const renderReview = () => (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h6" sx={{ mb: 3 }}>
-        Review & Publish
-      </Typography>
-
-      <Box sx={{
-        p: 4,
-        bgcolor: "rgba(0,0,0,0.3)",
-        borderRadius: "24px",
-        border: "1px solid rgba(255,255,255,0.05)",
-        mb: 4
-      }}>
-        <Grid container spacing={4}>
-          <Grid item xs={12} sm={6}>
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>TEST NAME</Typography>
-              <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{testName}</Typography>
-            </Box>
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>COURSE</Typography>
-              <Typography variant="body1" sx={{ color: "#06B6D4", fontWeight: 700 }}>{courses.find(c => c.id === selectedCourse)?.name}</Typography>
-            </Box>
-            <Box>
-              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>TEMPLATE</Typography>
-              <Typography variant="body1" sx={{ color: "#00DDB3", fontWeight: 700 }}>{templates.find(t => t.id === selectedTemplate)?.name || 'None Selected'}</Typography>
-            </Box>
-          </Grid>
-
-          <Grid item xs={12} sm={6}>
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>QUESTIONS</Typography>
-              <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{selectedQuestions.length} questions selected</Typography>
-            </Box>
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>SCHEDULE</Typography>
-              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
-                {formatUtcDisplay(startTime)} to {formatUtcDisplay(endTime)}
-              </Typography>
-              <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.55)", display: "block", mt: 0.5 }}>
-                Pakistan view: {formatPktFromUtcInput(startTime)} to {formatPktFromUtcInput(endTime)} ({PK_TIMEZONE})
-              </Typography>
-            </Box>
-          </Grid>
-        </Grid>
-      </Box>
-
-      <Alert
-        severity="success"
-        icon={<Plus size={20} />}
-        sx={{
-          bgcolor: "rgba(0, 221, 179, 0.05)",
-          color: "#00DDB3",
-          border: "1px solid rgba(0, 221, 179, 0.2)",
-          borderRadius: "16px",
-          "& .MuiAlert-icon": { color: "#00DDB3" }
-        }}
-      >
-        Ready to publish! Click "Publish Test" to make it available to students.
-      </Alert>
-    </Box>
-  );
-
-  const renderStepContent = () => {
-    if (skipQuestionStep) {
-      // When skipping questions: Basic Info → Schedule → Review
-      if (activeStep === 0) return renderBasicInfo();
-      if (activeStep === 1) return renderSchedule();
-      if (activeStep === 2) return renderReview();
-    } else {
-      // Normal flow: Basic Info → Select Questions → Schedule → Review
-      if (activeStep === 0) return renderBasicInfo();
-      if (activeStep === 1) return renderSelectQuestions();
-      if (activeStep === 2) return renderSchedule();
-      if (activeStep === 3) return renderReview();
+      default:
+        return null;
     }
-    return null;
   };
 
   return (
@@ -828,7 +493,7 @@ export default function TestCreationWizard() {
           border: "1px solid rgba(255,255,255,0.05)"
         }}>
           <Typography variant="h3" sx={{ mb: 4, fontWeight: 800, textAlign: "center", background: "linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.5) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            {isDraftBeingPublished ? 'Publish Draft Test' : isEditing ? 'Edit Published Test' : 'Create New Test'}
+            {isEditing ? 'Edit Existing Test' : 'Create New Test'}
           </Typography>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -858,7 +523,6 @@ export default function TestCreationWizard() {
               onClick={handleBack}
             >
               Back
-
             </Button>
 
             {activeStep === steps.length - 1 ? (
@@ -876,7 +540,7 @@ export default function TestCreationWizard() {
                   '&:hover': { transform: "scale(1.02)", boxShadow: "0 0 20px rgba(0, 221, 179, 0.4)" }
                 }}
               >
-                {loading ? <CircularProgress size={24} color="inherit" /> : 'Publish Test'}
+                {loading ? <CircularProgress size={24} color="inherit" /> : (isEditing ? 'Publish Test' : '')}
               </Button>
             ) : (
               <Button

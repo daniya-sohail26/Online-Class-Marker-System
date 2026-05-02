@@ -10,8 +10,9 @@ if (isNode) {
   // --- BACKEND (Node.js) ---
   // We use dynamic imports or just check process.env
   // Note: For backend, ensure you run 'node index.js' with environment variables loaded
-  supabaseUrl = process.env.VITE_SUPABASE_URL;
-  supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  // Accept either VITE_ prefixed vars (used by Vite) or server-side names.
+  supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || process.env.SUPABASE_PUBLIC_URL;
+  supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 } else {
   // --- FRONTEND (Vite/Browser) ---
   supabaseUrl = import.meta.env.VITE_SUPABASE_URL;

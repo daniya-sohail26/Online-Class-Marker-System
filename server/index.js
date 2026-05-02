@@ -16,6 +16,7 @@ import studentRoutes from './routes/studentRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import testsRoutes from './routes/tests.js';
 import attemptRoutes from './routes/attemptRoutes.js';
+import ipProctorRoutes from './routes/ipProctorRoutes.js';
 
 const app = express();
 app.use(cors());
@@ -34,6 +35,7 @@ app.use('/api/students', studentRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/tests', testsRoutes);
 app.use('/api/attempts', attemptRoutes);
+app.use('/api/proctor', ipProctorRoutes);
 
 // --- Initialize Supabase ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;

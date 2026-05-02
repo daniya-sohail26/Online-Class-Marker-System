@@ -15,6 +15,7 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../server/config/supabaseClient";
+import { toPKTDate } from "../utils/pktTime";
 
 export default function StudentResults() {
   const { profile } = useAuth();
@@ -55,7 +56,7 @@ export default function StudentResults() {
           minHeight: "60vh",
         }}
       >
-        <CircularProgress sx={{ color: "#00DDB3" }} />
+        <CircularProgress sx={{ color: "#A855F7" }} />
       </Box>
     );
   }
@@ -68,7 +69,7 @@ export default function StudentResults() {
           fontWeight: 800,
           color: "#fff",
           mb: 3,
-          background: "linear-gradient(135deg, #00DDB3, #06B6D4)",
+          background: "linear-gradient(135deg, #A855F7, #7C3AED)",
           backgroundClip: "text",
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
@@ -125,7 +126,7 @@ export default function StudentResults() {
                         cursor: "pointer",
                         transition: "background-color 0.2s",
                         "&:hover": {
-                          bgcolor: "rgba(6, 182, 212, 0.1)",
+                          bgcolor: "rgba(168, 85, 247, 0.1)",
                         },
                       }}
                     >
@@ -146,7 +147,7 @@ export default function StudentResults() {
                         />
                       </TableCell>
                       <TableCell sx={{ color: "rgba(255,255,255,0.7)" }}>
-                        {new Date(attempt.created_at).toLocaleDateString()}
+                        {toPKTDate(attempt.created_at)}
                       </TableCell>
                     </TableRow>
                   );

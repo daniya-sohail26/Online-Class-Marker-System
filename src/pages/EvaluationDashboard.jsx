@@ -15,9 +15,10 @@ import {
   TableRow,
   Chip,
 } from "@mui/material";
-import { ArrowLeft, Eye } from "lucide-react";
+import { ArrowLeft, Eye, Download } from "lucide-react";
 import ExamReportView from "../components/ExamReportView";
 import { authFetch } from "../utils/authFetch";
+import { generateReportPdf } from "../utils/generateReportPdf";
 
 export default function EvaluationDashboard() {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ export default function EvaluationDashboard() {
   const [report, setReport] = useState(null);
   const [listLoading, setListLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [pdfLoadingAttemptId, setPdfLoadingAttemptId] = useState(null);
   const [error, setError] = useState("");
 
   const glassCardStyle = {
@@ -45,7 +47,10 @@ export default function EvaluationDashboard() {
       if (!contentType || !contentType.includes("application/json")) {
         throw new Error("Server returned non-JSON. Check that the API is running and the Vite proxy is configured.");
       }
-      if (!response.ok) throw new Error("Failed to fetch attempts");
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || `Failed to fetch attempts (HTTP ${response.status})`);
+      }
       const data = await response.json();
       setAttempts(data.attempts || []);
     } catch (err) {
@@ -91,6 +96,38 @@ export default function EvaluationDashboard() {
     fetchMainPageData();
   };
 
+  const handleDownloadPdf = async (attemptId, fallbackStudentName) => {
+    setPdfLoadingAttemptId(attemptId);
+    setError("");
+    try {
+      const response = await authFetch(`/api/teacher/evaluation/${attemptId}`);
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Server returned non-JSON.");
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || `Failed to download PDF report (HTTP ${response.status})`);
+      }
+      const data = await response.json();
+      if (!data?.report) {
+        throw new Error("Report payload is missing.");
+      }
+      const safeReport = {
+        ...data.report,
+        student: {
+          ...(data.report.student || {}),
+          displayName: data.report.student?.displayName || fallbackStudentName || "Student",
+        },
+      };
+      generateReportPdf(safeReport);
+    } catch (err) {
+      setError(err.message || "Failed to download report PDF");
+    } finally {
+      setPdfLoadingAttemptId(null);
+    }
+  };
+
   if (listLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
@@ -133,7 +170,7 @@ export default function EvaluationDashboard() {
             <Table>
               <TableHead>
                 <TableRow>
-                  {["Test", "Student", "Enrollment", "Status", "Score", "Result", "Action"].map((head) => (
+                  {["Test", "Student", "Enrollment", "Status", "Score", "Result", "IP Tracking", "Action"].map((head) => (
                     <TableCell
                       key={head}
                       sx={{ color: "rgba(255,255,255,0.5)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}
@@ -146,7 +183,7 @@ export default function EvaluationDashboard() {
               <TableBody>
                 {attempts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ color: "rgba(255,255,255,0.5)", py: 4, borderBottom: "none" }}>
+                    <TableCell colSpan={8} align="center" sx={{ color: "rgba(255,255,255,0.5)", py: 4, borderBottom: "none" }}>
                       No attempts found.
                     </TableCell>
                   </TableRow>
@@ -191,21 +228,68 @@ export default function EvaluationDashboard() {
                         )}
                       </TableCell>
                       <TableCell sx={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                        <Button
-                          onClick={() => handleViewDetails(attempt.attempt_id)}
-                          startIcon={<Eye size={16} />}
-                          sx={{
-                            background: "linear-gradient(135deg, rgba(0,221,179,0.1), rgba(6,182,212,0.1))",
-                            color: "#00DDB3",
-                            textTransform: "none",
-                            borderRadius: "8px",
-                            "&:hover": {
-                              background: "linear-gradient(135deg, rgba(0,221,179,0.2), rgba(6,182,212,0.2))",
-                            },
-                          }}
-                        >
-                          Review
-                        </Button>
+                        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                          <Typography variant="caption" sx={{ fontFamily: "monospace", color: "rgba(255,255,255,0.5)", fontSize: "11px" }}>
+                            {attempt.initial_ip || "—"}
+                          </Typography>
+                          {attempt.last_ip && attempt.last_ip !== attempt.initial_ip && (
+                            <Typography variant="caption" sx={{ fontFamily: "monospace", color: "#67e8f9", fontSize: "11px" }}>
+                              → {attempt.last_ip}
+                            </Typography>
+                          )}
+                          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                            <Chip
+                              label={`IP changes: ${attempt.ip_change_count ?? 0}`}
+                              size="small"
+                              sx={{ bgcolor: "rgba(6,182,212,0.12)", color: "#67e8f9", fontWeight: 700, fontSize: "10px", height: 20 }}
+                            />
+                            {(attempt.vpn_detected === true) && (
+                              <Chip
+                                label="VPN detected"
+                                size="small"
+                                sx={{ bgcolor: "rgba(245,158,11,0.15)", color: "#fbbf24", fontWeight: 800, fontSize: "10px", height: 20 }}
+                              />
+                            )}
+                          </Box>
+                          {attempt.ip_locked && (
+                            <Chip label="IP FLAGGED" size="small" sx={{ bgcolor: "rgba(239,68,68,0.12)", color: "#f87171", fontWeight: 800, fontSize: "10px", height: 20 }} />
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell sx={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                          <Button
+                            onClick={() => handleViewDetails(attempt.attempt_id)}
+                            startIcon={<Eye size={16} />}
+                            sx={{
+                              background: "linear-gradient(135deg, rgba(0,221,179,0.1), rgba(6,182,212,0.1))",
+                              color: "#00DDB3",
+                              textTransform: "none",
+                              borderRadius: "8px",
+                              "&:hover": {
+                                background: "linear-gradient(135deg, rgba(0,221,179,0.2), rgba(6,182,212,0.2))",
+                              },
+                            }}
+                          >
+                            Review
+                          </Button>
+                          <Button
+                            onClick={() => handleDownloadPdf(attempt.attempt_id, attempt.student_name)}
+                            startIcon={<Download size={16} />}
+                            disabled={pdfLoadingAttemptId === attempt.attempt_id}
+                            sx={{
+                              background: "linear-gradient(135deg, rgba(168,85,247,0.12), rgba(124,58,237,0.12))",
+                              color: "#c4b5fd",
+                              textTransform: "none",
+                              borderRadius: "8px",
+                              "&:hover": {
+                                background: "linear-gradient(135deg, rgba(168,85,247,0.2), rgba(124,58,237,0.2))",
+                              },
+                            }}
+                          >
+                            {pdfLoadingAttemptId === attempt.attempt_id ? "Preparing..." : "PDF"}
+                          </Button>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   ))

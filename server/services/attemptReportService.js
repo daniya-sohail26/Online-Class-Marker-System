@@ -1,4 +1,5 @@
 import { buildExamReport } from './ExamReportPrototype.js';
+import { getIpAuditLog } from './IpProctorService.js';
 
 /**
  * Load attempt, test, template, student user, enrollment, and answers (with questions)
@@ -22,8 +23,8 @@ export async function loadAttemptReportData(supabase, attemptId) {
         id,
         name,
         course_id,
-        end_time,
         total_marks,
+        end_time,
         template_id,
         created_by,
         templates (*)
@@ -92,8 +93,19 @@ export async function loadAttemptReportData(supabase, attemptId) {
   return { attempt, test, template, user, enrollmentNumber, answers };
 }
 
-export function assembleReport(audience, rows) {
+export async function assembleReport(audience, rows, supabaseClient) {
   const { attempt, test, template, user, enrollmentNumber, answers } = rows;
+
+  // Load IP audit data for teacher reports
+  let ipAuditData = null;
+  if (audience === 'teacher' && attempt?.id && supabaseClient) {
+    try {
+      ipAuditData = await getIpAuditLog(supabaseClient, attempt.id);
+    } catch (err) {
+      console.error('[Report] IP audit load error:', err);
+    }
+  }
+
   return buildExamReport(audience, {
     attempt,
     test,
@@ -101,5 +113,6 @@ export function assembleReport(audience, rows) {
     user,
     enrollmentNumber,
     answerRows: answers,
+    ipAuditData,
   });
 }

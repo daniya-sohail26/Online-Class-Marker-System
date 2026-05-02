@@ -18,6 +18,7 @@ import TaskAltRoundedIcon from "@mui/icons-material/TaskAltRounded";
 import { supabase } from "../../server/config/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
 import { scoreAttempt, scoreAttemptEdge } from "../api/attemptApi";
+import { authFetch } from "../utils/authFetch";
 
 function hashSeed(input) {
   let h = 0;
@@ -63,7 +64,45 @@ function isWindowActive(start, end) {
   return true;
 }
 
+function detectClientPlatform() {
+  const ua = (typeof navigator !== "undefined" ? navigator.userAgent : "") || "";
+  const isMobileUa = /Mobi|Android|iPhone|iPad|iPod|Windows Phone/i.test(ua);
+  return isMobileUa ? "mobile" : "web";
+}
+
+function normalizeAllowedPlatform(value) {
+  const normalized = String(value || "both").toLowerCase();
+  if (normalized === "web" || normalized === "mobile" || normalized === "both") {
+    return normalized;
+  }
+  return "both";
+}
+
 const MAX_TAB_VIOLATIONS = 3;
+const PUBLIC_IP_CACHE_TTL_MS = 5000;
+
+let cachedPublicIp = null;
+let cachedPublicIpAt = 0;
+
+async function getPublicIp() {
+  const now = Date.now();
+  if (cachedPublicIp && now - cachedPublicIpAt < PUBLIC_IP_CACHE_TTL_MS) {
+    return cachedPublicIp;
+  }
+
+  try {
+    const response = await fetch("https://api.ipify.org?format=json", { cache: "no-store" });
+    if (!response.ok) return null;
+
+    const payload = await response.json();
+    const ip = payload?.ip || null;
+    cachedPublicIp = ip;
+    cachedPublicIpAt = now;
+    return ip;
+  } catch {
+    return null;
+  }
+}
 
 export default function ExaminationModule() {
   const navigate = useNavigate();
@@ -120,10 +159,11 @@ export default function ExaminationModule() {
       "shuffle_questions",
       "shuffle_options",
       "show_results_immediately",
-        "lock_section_navigation",
-        "time_per_question",
-        "strict_proctoring",
-        "prevent_tab_switch",
+      "lock_section_navigation",
+      "time_per_question",
+      "strict_proctoring",
+      "prevent_tab_switch",
+      "allowed_platform",
     ].join(",");
 
     const templatesRes = await supabase
@@ -156,6 +196,52 @@ export default function ExaminationModule() {
     [navigate, testId],
   );
 
+  const logIpAction = useCallback(
+    async (action, targetAttemptId = attemptId) => {
+      if (!targetAttemptId || !testId) return { autoSubmitted: false };
+
+      try {
+        const publicIp = await getPublicIp();
+        const response = await authFetch("/api/proctor/log-ip", {
+          method: "POST",
+          body: JSON.stringify({
+            attemptId: targetAttemptId,
+            testId,
+            action,
+            clientIp: publicIp,
+          }),
+        });
+
+        if (!response.ok) {
+          return { autoSubmitted: false };
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        if (payload?.autoSubmitted) {
+          submittedRef.current = true;
+          if (timerRef.current) clearInterval(timerRef.current);
+          if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+
+          try {
+            await scoreAttempt(targetAttemptId);
+          } catch (apiErr) {
+            console.warn("IP auto-submit scoring fallback", apiErr);
+            await scoreAttemptEdge(targetAttemptId);
+          }
+
+          navigateToResults(targetAttemptId);
+          return { autoSubmitted: true };
+        }
+
+        return { autoSubmitted: false };
+      } catch (error) {
+        console.warn("[Proctor] IP logging failed", error);
+        return { autoSubmitted: false };
+      }
+    },
+    [attemptId, navigateToResults, testId],
+  );
+
   const submitAttempt = useCallback(
     async (auto = false) => {
       if (!attemptId || submittedRef.current) return;
@@ -175,6 +261,12 @@ export default function ExaminationModule() {
 
       try {
         setSubmitting(true);
+
+        const proctorResult = await logIpAction("submit", attemptId);
+        if (proctorResult.autoSubmitted) {
+          return;
+        }
+
         const nowIso = new Date().toISOString();
 
         const { error: submitErr } = await supabase
@@ -199,7 +291,7 @@ export default function ExaminationModule() {
         setError(submitError.message || "Failed to submit exam.");
       }
     },
-    [attemptId, navigateToResults, questions, selectedOptions],
+    [attemptId, logIpAction, navigateToResults, questions, selectedOptions],
   );
 
   const registerViolation = useCallback(async () => {
@@ -277,6 +369,17 @@ export default function ExaminationModule() {
         }
 
         const template = await loadTemplate(test.template_id);
+        const allowedPlatform = normalizeAllowedPlatform(template?.allowed_platform);
+        const clientPlatform = detectClientPlatform();
+
+        if (allowedPlatform !== "both" && allowedPlatform !== clientPlatform) {
+          throw new Error(
+            allowedPlatform === "mobile"
+              ? "This test can only be attempted on mobile devices."
+              : "This test can only be attempted on web/desktop.",
+          );
+        }
+
         const durationMinutes = Number(template?.duration_minutes ?? 60);
         const maxAttempts = Number(template?.max_attempts ?? 1);
         const templateTimePerQuestionSeconds = Number(template?.time_per_question ?? 0) * 60;
@@ -335,6 +438,15 @@ export default function ExaminationModule() {
         const submittedAttempts = (attempts ?? []).filter((a) => a.submitted_at);
         let activeAttempt = (attempts ?? []).find((a) => !a.submitted_at);
 
+        if ((attempts ?? []).length > 1) {
+          const openAttempts = (attempts ?? []).filter((a) => !a.submitted_at);
+          if (openAttempts.length > 1) {
+            throw new Error(
+              "An active exam attempt is already open for this test in another window or device. Please return to the existing session.",
+            );
+          }
+        }
+
         if (!activeAttempt && submittedAttempts.length > 0) {
           const latestSubmitted = submittedAttempts[0];
           navigateToResults(latestSubmitted.id);
@@ -369,6 +481,8 @@ export default function ExaminationModule() {
               preventTabSwitch: templatePreventTabSwitch,
               strictProctoring: templateStrictProctoring,
               showResultsImmediately: Boolean(template?.show_results_immediately),
+              allowedPlatform,
+              clientPlatform,
               maxAttempts,
             });
             setAttemptId(attemptRow.id);
@@ -407,6 +521,24 @@ export default function ExaminationModule() {
             throw new Error(upsertErr.message || "Unable to start attempt.");
           }
 
+          const { data: duplicateOpenAttempts, error: duplicateErr } = await supabase
+            .from("attempts")
+            .select("id, started_at, submitted_at, created_at")
+            .eq("test_id", testId)
+            .eq("student_id", profile.user_id)
+            .is("submitted_at", null)
+            .order("created_at", { ascending: false });
+
+          if (duplicateErr) {
+            throw new Error(duplicateErr.message || "Unable to verify attempt lock.");
+          }
+
+          if ((duplicateOpenAttempts ?? []).length > 1) {
+            throw new Error(
+              "Another active attempt already exists for this test. Close the other window and continue in the original session.",
+            );
+          }
+
           const { data: createdOrExisting, error: fetchErr } = await supabase
             .from("attempts")
             .select("id, started_at, submitted_at")
@@ -421,8 +553,10 @@ export default function ExaminationModule() {
           return createdOrExisting;
         };
 
+        let createdFreshAttempt = false;
         if (!activeAttempt) {
           activeAttempt = await upsertAttempt();
+          createdFreshAttempt = true;
         }
 
         if (template?.shuffle_questions) {
@@ -490,6 +624,9 @@ export default function ExaminationModule() {
         }
 
         await hydrateAttempt(activeAttempt);
+
+        // Ensure IP proctor trail exists for this attempt lifecycle.
+        await logIpAction(createdFreshAttempt ? "start" : "heartbeat", activeAttempt.id);
         return;
       } catch (bootErr) {
         console.error("Exam bootstrap failed:", bootErr);
@@ -508,7 +645,7 @@ export default function ExaminationModule() {
     return () => {
       cancelled = true;
     };
-  }, [loadTemplate, profile?.user_id, testId]);
+  }, [loadTemplate, logIpAction, navigateToResults, profile?.user_id, testId]);
 
   useEffect(() => {
     if (loading || submitting || !attemptId) return undefined;
@@ -573,16 +710,22 @@ export default function ExaminationModule() {
       if (document.hidden) registerViolation();
     };
 
-    const handleBlur = () => registerViolation();
-
     document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("blur", handleBlur);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("blur", handleBlur);
     };
   }, [attemptId, preventTabSwitch, registerViolation, strictProctoring]);
+
+  useEffect(() => {
+    if (!attemptId || submittedRef.current) return undefined;
+
+    const heartbeat = setInterval(() => {
+      logIpAction("heartbeat", attemptId);
+    }, 1000);
+
+    return () => clearInterval(heartbeat);
+  }, [attemptId, logIpAction]);
 
   useEffect(() => {
     if (!attemptId) return undefined;
@@ -679,6 +822,7 @@ export default function ExaminationModule() {
     }));
 
     await saveAnswer(questionId, optionLetter);
+    logIpAction("answer", attemptId);
   };
 
   const toggleFlag = (questionId) => {
@@ -976,6 +1120,12 @@ export default function ExaminationModule() {
               </Typography>
               <Typography sx={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
                 Duration: <span style={{ color: "#fff", fontWeight: 700 }}>{meta?.durationMinutes ?? 0} min</span>
+              </Typography>
+              <Typography sx={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
+                Allowed device: <span style={{ color: "#fff", fontWeight: 700 }}>{meta?.allowedPlatform === "both" ? "Web & Mobile" : meta?.allowedPlatform === "mobile" ? "Mobile only" : "Web only"}</span>
+              </Typography>
+              <Typography sx={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
+                Current device: <span style={{ color: "#fff", fontWeight: 700 }}>{meta?.clientPlatform === "mobile" ? "Mobile" : "Web/Desktop"}</span>
               </Typography>
             </Stack>
           </Card>

@@ -31,6 +31,7 @@ router.get('/', authenticateToken, async (req, res) => {
             negativeMarkingPenalty: t.negative_marking_penalty,
             hasSections: t.has_sections,
             sections: t.sections_config,
+            allowedPlatform: t.allowed_platform || 'both',
             behavior: {
                 shuffleQs: t.shuffle_questions,
                 shuffleOpts: t.shuffle_options,
@@ -62,6 +63,7 @@ router.post('/', authenticateToken, async (req, res) => {
             marksPerQuestion,
             hasNegativeMarking,
             penalty,
+            allowedPlatform,
             behavior,
             hasSections,
             sections
@@ -79,6 +81,7 @@ router.post('/', authenticateToken, async (req, res) => {
                 marks_per_question: marksPerQuestion,
                 negative_marking_enabled: hasNegativeMarking,
                 negative_marking_penalty: penalty,
+                allowed_platform: allowedPlatform || 'both',
                 shuffle_questions: behavior?.shuffleQs,
                 shuffle_options: behavior?.shuffleOpts,
                 allow_review: behavior?.allowReview,
@@ -132,6 +135,7 @@ router.get('/active/list', authenticateToken, async (req, res) => {
             negativeMarkingPenalty: t.negative_marking_penalty,
             hasSections: t.has_sections,
             sections: t.sections_config,
+            allowedPlatform: t.allowed_platform || 'both',
             behavior: {
                 shuffleQs: t.shuffle_questions,
                 shuffleOpts: t.shuffle_options,
@@ -180,6 +184,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
             negativeMarkingPenalty: data.negative_marking_penalty,
             hasSections: data.has_sections,
             sections: data.sections_config,
+            allowedPlatform: data.allowed_platform || 'both',
             behavior: {
                 shuffleQs: data.shuffle_questions,
                 shuffleOpts: data.shuffle_options,
@@ -218,6 +223,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
                 marks_per_question: updates.marksPerQuestion,
                 negative_marking_enabled: updates.hasNegativeMarking ?? updates.negativeMarking,
                 negative_marking_penalty: updates.penalty ?? updates.negativeMarkingPenalty,
+                allowed_platform: updates.allowedPlatform || updates.allowed_platform || 'both',
                 shuffle_questions: behavior.shuffleQs,
                 shuffle_options: behavior.shuffleOpts,
                 allow_review: behavior.allowReview,

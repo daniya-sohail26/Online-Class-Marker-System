@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Box,
   Typography,
@@ -9,14 +9,25 @@ import {
   Stack,
   Paper,
   Avatar,
+  Button,
+  Collapse,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from "@mui/material";
-import { CheckCircle, XCircle, Flag, Trophy, BookOpen } from "lucide-react";
+import { CheckCircle, XCircle, Flag, Trophy, BookOpen, Download, Shield, ChevronDown, ChevronUp, Wifi, WifiOff } from "lucide-react";
+import { generateReportPdf } from "../utils/generateReportPdf";
+import { toPKTDisplay } from "../utils/pktTime";
 
 /**
  * Shared “fixed template” UI for teacher drill-down and student post-test results.
  * Data shape comes from the server-side ExamReportPrototype builder.
  */
 export default function ExamReportView({ report, glassCardStyle }) {
+  const [ipExpanded, setIpExpanded] = useState(false);
   if (!report) return null;
 
   const baseGlass =
@@ -29,11 +40,39 @@ export default function ExamReportView({ report, glassCardStyle }) {
       boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.3)",
     };
 
-  const { test, student, attempt, stats, questions } = report;
+  const { test, student, attempt, stats, questions, proctor = {} } = report;
   const showEmail = report.audience === "teacher" && student?.email;
+  const hasViolation = Boolean(proctor?.hasViolation || (attempt?.violations ?? 0) > 0);
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {/* Download PDF Button */}
+      <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button
+          variant="contained"
+          startIcon={<Download size={18} />}
+          onClick={() => generateReportPdf(report)}
+          sx={{
+            background: "linear-gradient(135deg, #A855F7 0%, #7C3AED 100%)",
+            color: "#fff",
+            fontWeight: 700,
+            textTransform: "none",
+            borderRadius: "12px",
+            px: 3,
+            py: 1,
+            boxShadow: "0 4px 15px rgba(168,85,247,0.3)",
+            "&:hover": {
+              background: "linear-gradient(135deg, #9333EA 0%, #6D28D9 100%)",
+              transform: "translateY(-1px)",
+              boxShadow: "0 6px 20px rgba(168,85,247,0.4)",
+            },
+            transition: "all 0.2s ease",
+          }}
+        >
+          Download PDF Report
+        </Button>
+      </Box>
+
       <Card
         sx={{
           ...baseGlass,
@@ -62,13 +101,36 @@ export default function ExamReportView({ report, glassCardStyle }) {
           {attempt?.inProgress && (
             <Chip label="In progress — score updates live" size="small" sx={{ mt: 1, bgcolor: "rgba(6,182,212,0.2)", color: "#67e8f9" }} />
           )}
-          {attempt?.violations > 0 && (
-            <Chip
-              label={`${attempt.violations} proctoring flag(s)`}
-              color="error"
-              size="small"
-              sx={{ mt: 1, ml: attempt?.inProgress ? 1 : 0 }}
-            />
+          {hasViolation && (
+            <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
+              <Chip
+                label="Violation Detected"
+                color="error"
+                size="small"
+                sx={{ fontWeight: 800 }}
+              />
+              <Chip
+                label={`${attempt?.violations ?? 0} proctoring flag(s)`}
+                color="error"
+                size="small"
+                variant="outlined"
+                sx={{ borderColor: "rgba(248,113,113,0.35)", color: "#f87171" }}
+              />
+              {proctor.tabSwitchViolations > 0 && (
+                <Chip
+                  label={`Tab Switch ${proctor.tabSwitchViolations}`}
+                  size="small"
+                  sx={{ bgcolor: "rgba(245,158,11,0.12)", color: "#F59E0B", fontWeight: 700 }}
+                />
+              )}
+              {proctor.ipViolations > 0 && (
+                <Chip
+                  label={`IP Flag ${proctor.ipViolations}`}
+                  size="small"
+                  sx={{ bgcolor: "rgba(56,189,248,0.12)", color: "#38BDF8", fontWeight: 700 }}
+                />
+              )}
+            </Stack>
           )}
         </Box>
         <Box sx={{ textAlign: "right" }}>
@@ -98,9 +160,9 @@ export default function ExamReportView({ report, glassCardStyle }) {
           </Typography>
           <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.4)" }}>
             {attempt?.submittedAt
-              ? new Date(attempt.submittedAt).toLocaleString()
+              ? toPKTDisplay(attempt.submittedAt)
               : attempt?.startedAt
-                ? `Started ${new Date(attempt.startedAt).toLocaleString()}`
+                ? `Started ${toPKTDisplay(attempt.startedAt)}`
                 : ""}
           </Typography>
         </Box>
@@ -108,7 +170,7 @@ export default function ExamReportView({ report, glassCardStyle }) {
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={4}>
-          <Card sx={{ ...baseGlass, textAlign: "center", py: 3 }}>
+          <Card sx={{ ...baseGlass, textAlign: "center", py: 3, border: hasViolation ? "1px solid rgba(248,113,113,0.25)" : baseGlass.border }}>
             <Avatar sx={{ width: 56, height: 56, margin: "0 auto", mb: 2, bgcolor: "#0ea5e9", color: "#fff" }}>
               <Trophy size={28} />
             </Avatar>
@@ -121,7 +183,7 @@ export default function ExamReportView({ report, glassCardStyle }) {
           </Card>
         </Grid>
         <Grid item xs={12} md={4}>
-          <Card sx={{ ...baseGlass, textAlign: "center", py: 3 }}>
+          <Card sx={{ ...baseGlass, textAlign: "center", py: 3, border: hasViolation ? "1px solid rgba(248,113,113,0.25)" : baseGlass.border }}>
             <Typography variant="h3" fontWeight={900} color="#22c55e" sx={{ mt: 1 }}>
               {stats?.accuracyPct ?? 0}%
             </Typography>
@@ -139,7 +201,7 @@ export default function ExamReportView({ report, glassCardStyle }) {
               ...baseGlass,
               textAlign: "center",
               py: 3,
-              border: attempt?.violations > 0 ? "1px solid rgba(248,113,113,0.4)" : baseGlass.border,
+              border: hasViolation ? "1px solid rgba(248,113,113,0.4)" : baseGlass.border,
             }}
           >
             <Avatar
@@ -148,18 +210,28 @@ export default function ExamReportView({ report, glassCardStyle }) {
                 height: 52,
                 margin: "0 auto",
                 mb: 1,
-                bgcolor: attempt?.violations > 0 ? "#fee2e2" : "rgba(255,255,255,0.06)",
-                color: attempt?.violations > 0 ? "#ef4444" : "#94a3b8",
+                bgcolor: hasViolation ? "#fee2e2" : "rgba(255,255,255,0.06)",
+                color: hasViolation ? "#ef4444" : "#94a3b8",
               }}
             >
               <Flag size={26} />
             </Avatar>
-            <Typography variant="h4" fontWeight={900} color={attempt?.violations > 0 ? "#ef4444" : "text.secondary"}>
+            <Typography variant="h4" fontWeight={900} color={hasViolation ? "#ef4444" : "text.secondary"}>
               {attempt?.violations ?? 0}
             </Typography>
             <Typography variant="subtitle2" color="text.secondary">
               Proctor flags
             </Typography>
+            {proctor.tabSwitchViolations > 0 && (
+              <Typography variant="caption" sx={{ color: "#F59E0B", display: "block", mt: 0.5 }}>
+                Tab switches: {proctor.tabSwitchViolations}
+              </Typography>
+            )}
+            {proctor.ipViolations > 0 && (
+              <Typography variant="caption" sx={{ color: "#38BDF8", display: "block", mt: 0.25 }}>
+                IP flags: {proctor.ipViolations}
+              </Typography>
+            )}
           </Card>
         </Grid>
       </Grid>
@@ -274,6 +346,110 @@ export default function ExamReportView({ report, glassCardStyle }) {
           </Card>
         ))}
       </Stack>
+
+      {/* IP Proctor Audit — Teacher-only */}
+      {report.audience === "teacher" && report.ipAudit && (
+        <Card sx={{ ...baseGlass, p: 3, border: report.ipAudit.ipLocked ? "1px solid rgba(239,68,68,0.4)" : baseGlass.border }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+              <Avatar sx={{ width: 44, height: 44, bgcolor: report.ipAudit.ipLocked ? "rgba(239,68,68,0.15)" : "rgba(0,221,179,0.1)", color: report.ipAudit.ipLocked ? "#ef4444" : "#00DDB3" }}>
+                <Shield size={22} />
+              </Avatar>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 800, color: "#fff" }}>IP Proctor Audit</Typography>
+                <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.45)" }}>Network integrity check</Typography>
+              </Box>
+            </Box>
+            {report.ipAudit.ipLocked && (
+              <Chip label="IP CHANGED — AUTO SUBMITTED" size="small" sx={{ bgcolor: "rgba(239,68,68,0.15)", color: "#f87171", fontWeight: 800, border: "1px solid rgba(239,68,68,0.3)" }} />
+            )}
+          </Box>
+
+          <Grid container spacing={2} sx={{ mb: 2 }}>
+            <Grid item xs={6} sm={3}>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: "12px", bgcolor: "rgba(0,0,0,0.2)", textAlign: "center" }}>
+                <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", fontWeight: 600, mb: 0.5 }}>TAB SWITCH FLAGS</Typography>
+                <Typography sx={{ color: proctor.tabSwitchViolations > 0 ? "#F59E0B" : "#00DDB3", fontWeight: 900, fontSize: "20px" }}>{proctor.tabSwitchViolations ?? 0}</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: "12px", bgcolor: "rgba(0,0,0,0.2)", textAlign: "center" }}>
+                <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", fontWeight: 600, mb: 0.5 }}>INITIAL IP</Typography>
+                <Typography sx={{ color: "#00DDB3", fontWeight: 700, fontFamily: "monospace", fontSize: "13px" }}>{report.ipAudit.initialIp || "—"}</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: "12px", bgcolor: "rgba(0,0,0,0.2)", textAlign: "center" }}>
+                <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", fontWeight: 600, mb: 0.5 }}>IP FLAGS</Typography>
+                <Typography sx={{ color: report.ipAudit.ipChangeCount > 0 ? "#ef4444" : "#00DDB3", fontWeight: 900, fontSize: "20px" }}>{report.ipAudit.ipChangeCount}</Typography>
+              </Paper>
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: "12px", bgcolor: "rgba(0,0,0,0.2)", textAlign: "center" }}>
+                <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", fontWeight: 600, mb: 0.5 }}>VPN DETECTED</Typography>
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.5 }}>
+                  {report.ipAudit.vpnDetected ? <WifiOff size={16} color="#ef4444" /> : <Wifi size={16} color="#00DDB3" />}
+                  <Typography sx={{ color: report.ipAudit.vpnDetected ? "#ef4444" : "#00DDB3", fontWeight: 700 }}>{report.ipAudit.vpnDetected ? "Yes" : "No"}</Typography>
+                </Box>
+              </Paper>
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: "12px", bgcolor: "rgba(0,0,0,0.2)", textAlign: "center" }}>
+                <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", fontWeight: 600, mb: 0.5 }}>STATUS</Typography>
+                <Typography sx={{ color: report.ipAudit.ipLocked ? "#ef4444" : "#4ade80", fontWeight: 700 }}>{report.ipAudit.ipLocked ? "Flagged" : "Clean"}</Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+
+          {/* Expandable IP Log Table */}
+          {report.ipAudit.logs && report.ipAudit.logs.length > 0 && (
+            <Box>
+              <Button
+                onClick={() => setIpExpanded(!ipExpanded)}
+                endIcon={ipExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                sx={{ color: "rgba(255,255,255,0.6)", textTransform: "none", fontWeight: 600, mb: 1 }}
+              >
+                {ipExpanded ? "Hide" : "Show"} IP Log ({report.ipAudit.logs.length} entries)
+              </Button>
+              <Collapse in={ipExpanded}>
+                <TableContainer sx={{ borderRadius: "12px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: "rgba(255,255,255,0.03)" }}>
+                        <TableCell sx={{ color: "rgba(255,255,255,0.5)", fontWeight: 700, fontSize: "11px" }}>TIME (PKT)</TableCell>
+                        <TableCell sx={{ color: "rgba(255,255,255,0.5)", fontWeight: 700, fontSize: "11px" }}>IP ADDRESS</TableCell>
+                        <TableCell sx={{ color: "rgba(255,255,255,0.5)", fontWeight: 700, fontSize: "11px" }}>ACTION</TableCell>
+                        <TableCell sx={{ color: "rgba(255,255,255,0.5)", fontWeight: 700, fontSize: "11px" }}>VPN</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {report.ipAudit.logs.map((log, i) => (
+                        <TableRow key={log.id || i} sx={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                          <TableCell sx={{ color: "rgba(255,255,255,0.7)", fontSize: "12px" }}>{toPKTDisplay(log.created_at)}</TableCell>
+                          <TableCell sx={{ color: "#00DDB3", fontFamily: "monospace", fontSize: "12px", fontWeight: 600 }}>{log.ip_address}</TableCell>
+                          <TableCell>
+                            <Chip
+                              label={log.action}
+                              size="small"
+                              sx={{
+                                fontSize: "10px",
+                                fontWeight: 700,
+                                bgcolor: log.action === "ip_change" ? "rgba(239,68,68,0.12)" : "rgba(255,255,255,0.05)",
+                                color: log.action === "ip_change" ? "#f87171" : "rgba(255,255,255,0.6)",
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell sx={{ color: log.is_vpn ? "#ef4444" : "rgba(255,255,255,0.4)", fontSize: "12px" }}>{log.is_vpn ? "Yes" : "No"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Collapse>
+            </Box>
+          )}
+        </Card>
+      )}
     </Box>
   );
 }

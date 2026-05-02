@@ -38,6 +38,7 @@ export default function TestTemplateBuilder() {
   const [selectedCourse, setSelectedCourse] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [testCategory, setTestCategory] = useState("Quiz");
+  const [allowedPlatform, setAllowedPlatform] = useState("both");
 
   // --- 2. STRUCTURE STATE ---
   const [duration, setDuration] = useState(60);
@@ -169,6 +170,7 @@ export default function TestTemplateBuilder() {
         name: templateName,
         course_id: selectedCourse,
         template_type: testCategory,
+        allowed_platform: allowedPlatform,
         duration_minutes: parseInt(duration),
         total_questions: calculatedTotalQs,
         passing_percentage: parseInt(passingPercentage),
@@ -211,6 +213,7 @@ export default function TestTemplateBuilder() {
       // Reset form
       setTemplateName("");
       setTestCategory("Quiz");
+      setAllowedPlatform("both");
       setDuration(60);
       setPassingPercentage(50);
       setHasSections(false);
@@ -234,6 +237,7 @@ export default function TestTemplateBuilder() {
     setSelectedCourse(template.course_id || "");
     setTemplateName(template.name || "");
     setTestCategory(template.template_type || "Quiz");
+    setAllowedPlatform(template.allowed_platform || "both");
     setDuration(template.duration_minutes || 60);
     setPassingPercentage(template.passing_percentage || 50);
     setHasSections(template.has_sections || false);
@@ -377,6 +381,17 @@ export default function TestTemplateBuilder() {
                           <MenuItem value="final">Final Exam</MenuItem>
                           <MenuItem value="practice">Practice / Mock Test</MenuItem>
                           <MenuItem value="custom">Custom</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    <Grid item xs={12} md={6}>
+                      <FormControl fullWidth variant="filled" sx={{ "& .MuiFilledInput-root": { bgcolor: "rgba(0,0,0,0.3)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.05)" } }}>
+                        <InputLabel sx={{ color: "rgba(255,255,255,0.5)" }}>Allowed Platform</InputLabel>
+                        <Select value={allowedPlatform} onChange={(e) => setAllowedPlatform(e.target.value)} disableUnderline sx={{ color: "#fff", fontWeight: 700 }}>
+                          <MenuItem value="web">Web Only</MenuItem>
+                          <MenuItem value="mobile">Mobile Only</MenuItem>
+                          <MenuItem value="both">Web & Mobile</MenuItem>
                         </Select>
                       </FormControl>
                     </Grid>
@@ -585,6 +600,12 @@ export default function TestTemplateBuilder() {
                             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{duration} Mins</Typography>
                           </Box>
                           <Box display="flex" justifyContent="space-between">
+                            <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>Platform</Typography>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                              {allowedPlatform === "both" ? "Web & Mobile" : allowedPlatform === "web" ? "Web Only" : "Mobile Only"}
+                            </Typography>
+                          </Box>
+                          <Box display="flex" justifyContent="space-between">
                             <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>Structure</Typography>
                             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{hasSections ? `${sections.length} Sections` : "Standard List"}</Typography>
                           </Box>
@@ -656,7 +677,7 @@ export default function TestTemplateBuilder() {
                       <Box>
                         <Typography sx={{ fontWeight: 700, mb: 0.5 }}>{template.name}</Typography>
                         <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)" }}>
-                          {template.template_type} • {template.duration_minutes} mins • {template.total_questions} questions
+                          {template.template_type} • {template.duration_minutes} mins • {template.total_questions} questions • {template.allowed_platform === "both" ? "Web & Mobile" : template.allowed_platform === "web" ? "Web Only" : "Mobile Only"}
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', gap: 1 }}>

@@ -221,7 +221,8 @@ export default function TeacherDashboard() {
         name: formData.name,
         type: formData.type,
         totalQuestions: parseInt(formData.totalQuestions) || 0,
-        duration: parseInt(formData.duration) || 0
+        duration: parseInt(formData.duration) || 0,
+        allowedPlatform: formData.allowedPlatform || "both"
       });
 
       // Refresh data
@@ -833,6 +834,16 @@ export default function TeacherDashboard() {
                 </Grid>
                 <Grid item xs={6}>
                   <TextField fullWidth label="Duration (m)" name="duration" type="number" value={formData.duration || ""} onChange={handleFormChange} variant="filled" />
+                </Grid>
+                <Grid item xs={12}>
+                  <FormControl fullWidth variant="filled" sx={{ mt: 1 }}>
+                    <InputLabel>Allowed Platform</InputLabel>
+                    <Select name="allowedPlatform" value={formData.allowedPlatform || "both"} onChange={handleFormChange}>
+                      <MenuItem value="web">Web Only</MenuItem>
+                      <MenuItem value="mobile">Mobile Only</MenuItem>
+                      <MenuItem value="both">Web & Mobile</MenuItem>
+                    </Select>
+                  </FormControl>
                 </Grid>
               </Grid>
             </Box>

@@ -32,6 +32,14 @@ export function createEmptyExamReport() {
       startedAt: null,
       violations: 0,
       inProgress: false,
+      initialIp: null,
+      ipLocked: false,
+    },
+    proctor: {
+      totalViolations: 0,
+      tabSwitchViolations: 0,
+      ipViolations: 0,
+      hasViolation: false,
     },
     stats: {
       totalQuestions: 0,
@@ -40,6 +48,7 @@ export function createEmptyExamReport() {
       accuracyPct: 0,
     },
     questions: [],
+    ipAudit: null,
   };
 }
 
@@ -81,7 +90,7 @@ function buildOptionRows(q) {
  * @param {string|null} params.enrollmentNumber
  * @param {Array<object>} params.answerRows — `answers` with nested `questions`
  */
-export function buildExamReport(audience, { attempt, test, template, user, enrollmentNumber, answerRows }) {
+export function buildExamReport(audience, { attempt, test, template, user, enrollmentNumber, answerRows, ipAuditData }) {
   const report = cloneExamReport(createEmptyExamReport());
   report.audience = audience;
 
@@ -106,6 +115,22 @@ export function buildExamReport(audience, { attempt, test, template, user, enrol
   report.attempt.startedAt = attempt?.started_at ?? null;
   report.attempt.violations = attempt?.violations ?? 0;
   report.attempt.inProgress = !attempt?.submitted_at;
+  report.attempt.initialIp = attempt?.initial_ip ?? null;
+  report.attempt.ipLocked = attempt?.ip_locked ?? false;
+
+  const ipViolations = audience === 'teacher' && ipAuditData ? Number(ipAuditData.ipChangeCount ?? 0) : 0;
+  const totalViolations = Number(attempt?.violations ?? 0);
+  const tabSwitchViolations = Math.max(0, totalViolations - ipViolations);
+
+  report.proctor.totalViolations = totalViolations;
+  report.proctor.ipViolations = ipViolations;
+  report.proctor.tabSwitchViolations = tabSwitchViolations;
+  report.proctor.hasViolation = totalViolations > 0;
+
+  // Attach IP audit data for teacher reports
+  if (audience === 'teacher' && ipAuditData) {
+    report.ipAudit = ipAuditData;
+  }
 
   const sorted = [...(answerRows || [])].sort((a, b) => {
     const ta = a.answered_at ? new Date(a.answered_at).getTime() : 0;

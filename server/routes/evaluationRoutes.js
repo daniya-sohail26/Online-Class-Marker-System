@@ -38,8 +38,7 @@ router.get('/evaluation', authenticateToken, requireRole('teacher'), async (req,
           name,
           course_id,
           created_by,
-          total_marks,
-          templates (name)
+          total_marks
         )
       `
       )
@@ -73,14 +72,45 @@ router.get('/evaluation', authenticateToken, requireRole('teacher'), async (req,
       );
     }
 
+    const attemptIds = list.map((a) => a.id).filter(Boolean);
+    let ipStatsMap = {};
+    if (attemptIds.length) {
+      const { data: ipLogs } = await supabase
+        .from('ip_logs')
+        .select('attempt_id, ip_address, action, is_vpn, created_at')
+        .in('attempt_id', attemptIds)
+        .order('created_at', { ascending: true });
+
+      ipStatsMap = (ipLogs || []).reduce((acc, log) => {
+        if (!acc[log.attempt_id]) {
+          acc[log.attempt_id] = {
+            ipChangeCount: 0,
+            vpnDetected: false,
+            lastIp: null,
+          };
+        }
+        if (log.action === 'ip_change') {
+          acc[log.attempt_id].ipChangeCount += 1;
+        }
+        if (log.is_vpn) {
+          acc[log.attempt_id].vpnDetected = true;
+        }
+        if (log.ip_address) {
+          acc[log.attempt_id].lastIp = log.ip_address;
+        }
+        return acc;
+      }, {});
+    }
+
     const formatted = list.map((att) => {
       const t = Array.isArray(att.tests) ? att.tests[0] : att.tests;
       const cid = t?.course_id;
       const su = userMap[att.student_id];
       const en = cid ? enrollMap[`${att.student_id}|${cid}`] : null;
+      const ipStats = ipStatsMap[att.id] || { ipChangeCount: 0, vpnDetected: false, lastIp: null };
       return {
         attempt_id: att.id,
-        test_name: t?.name || t?.templates?.name || 'Untitled Test',
+        test_name: t?.name || 'Untitled Test',
         student_name: su?.name || 'Student',
         enrollment_number: en ?? '—',
         total_score: att.score,
@@ -90,6 +120,11 @@ router.get('/evaluation', authenticateToken, requireRole('teacher'), async (req,
         started_at: att.started_at,
         violations: att.violations,
         in_progress: !att.submitted_at,
+        initial_ip: ipStats.lastIp || null,
+        last_ip: ipStats.lastIp,
+        ip_change_count: ipStats.ipChangeCount,
+        vpn_detected: ipStats.vpnDetected,
+        ip_locked: ipStats.ipChangeCount > 0,
       };
     });
 
@@ -117,7 +152,7 @@ router.get('/evaluation/:attemptId', authenticateToken, requireRole('teacher'), 
     if (rows.test?.created_by !== userId) {
       return res.status(403).json({ error: 'Not allowed to view this attempt' });
     }
-    const report = assembleReport('teacher', rows);
+    const report = await assembleReport('teacher', rows, supabase);
     res.json({ report });
   } catch (error) {
     if (error?.code === 'PGRST116') {
