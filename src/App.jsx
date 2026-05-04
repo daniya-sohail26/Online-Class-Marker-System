@@ -180,6 +180,7 @@ function App() {
                     >
                       <Routes>
                         <Route path="dashboard" element={<StudentDashboard />} />
+                        <Route path="examinations" element={<StudentDashboard />} />
                         <Route path="exam/:testId" element={<ExaminationModule />} />
                         <Route path="results" element={<StudentResults />} />
                         <Route path="results/:attemptId" element={<ResultsPage />} />

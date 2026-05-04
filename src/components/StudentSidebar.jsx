@@ -81,8 +81,8 @@ export default function StudentSidebar() {
     {
       label: "Examinations",
       icon: <AssignmentIcon />,
-      path: "/student/dashboard",
-      isActive: (pathname) => pathname.startsWith("/student/exam"),
+      path: "/student/examinations",
+      isActive: (pathname) => pathname === "/student/examinations" || pathname.startsWith("/student/exam"),
     },
     {
       label: "Results",

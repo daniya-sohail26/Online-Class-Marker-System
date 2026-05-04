@@ -72,11 +72,12 @@ export default function QuestionBank() {
         }
 
         if (dbUserId === authId) {
-           const columnsToTry = ["auth_id", "user_id"];
-           for (const col of columnsToTry) {
-               const { data: userByCol } = await supabase.from("users").select("id").eq(col, authId).maybeSingle();
-               if (userByCol && userByCol.id) { dbUserId = userByCol.id; break; }
-           }
+          const { data: userByAuthId } = await supabase
+            .from("users")
+            .select("id")
+            .eq("auth_id", authId)
+            .maybeSingle();
+          if (userByAuthId?.id) dbUserId = userByAuthId.id;
         }
 
         const { data: teacherData } = await supabase.from("teachers").select("course_id").eq("user_id", dbUserId).not("course_id", "is", null).maybeSingle();
@@ -269,7 +270,10 @@ export default function QuestionBank() {
       files.forEach(fObj => formData.append('files', fObj.originalFile));
 
       const response = await fetch('http://localhost:5000/api/generate-questions', { method: 'POST', body: formData });
-      if (!response.ok) throw new Error("Network response was not ok");
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.error || "Network response was not ok");
+      }
       
       const newQuestions = await response.json();
       const formatted = newQuestions.map(q => ({ 
@@ -282,7 +286,7 @@ export default function QuestionBank() {
       if (formatted.length > 0) setActiveQuestionId(formatted[0].id);
 
     } catch (error) {
-      showToast("Failed to generate questions. Ensure Node backend is running.", "error");
+      showToast(error.message || "Failed to generate questions. Ensure Node backend is running.", "error");
     } finally {
       setIsGenerating(false);
     }
@@ -302,7 +306,10 @@ export default function QuestionBank() {
       files.forEach(fObj => formData.append('files', fObj.originalFile));
 
       const response = await fetch('http://localhost:5000/api/generate-questions', { method: 'POST', body: formData });
-      if (!response.ok) throw new Error("Network error");
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.error || "Network error");
+      }
 
       const newQuestions = await response.json();
       if (newQuestions && newQuestions.length > 0) {
@@ -314,7 +321,7 @@ export default function QuestionBank() {
         }
       }
     } catch (error) {
-      showToast("Failed to regenerate this specific question.", "error");
+      showToast(error.message || "Failed to regenerate this specific question.", "error");
     } finally {
       setRegeneratingIds(prev => prev.filter(reqId => reqId !== id));
     }
