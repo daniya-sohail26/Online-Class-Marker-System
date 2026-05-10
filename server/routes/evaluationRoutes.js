@@ -95,7 +95,7 @@ router.get('/evaluation', authenticateToken, requireRole('teacher'), async (req,
           acc[log.attempt_id].ipChangeCount += 1;
         }
         if (log.action === 'unauthorized_ip') {
-          acc[log.attempt_id].unauthorizedIpCount += 1;
+          acc[log.attempt_id].unauthorizedIpCount = 1;
         }
         if (log.action === 'duplicate_ip') {
           acc[log.attempt_id].duplicateIpCount += 1;

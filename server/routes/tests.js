@@ -229,8 +229,6 @@ router.post('/', authenticateToken, requireRole('teacher'), async (req, res) => 
       end_time,
       isPublished,
       is_published,
-      computerLabId,
-      computer_lab_id,
     } = req.body;
 
     const normalizedData = {
@@ -563,7 +561,7 @@ router.put('/:id', async (req, res) => {
     if (hasName) normalizedData.name = name;
     if (hasPublish) normalizedData.is_published = isPublished !== undefined ? isPublished : is_published;
     if (hasCourse) normalizedData.course_id = course_id ?? courseId;
-    if (hasLab) normalizedData.computer_lab_id = computer_lab_id ?? computerLabId || null;
+    if (hasLab) normalizedData.computer_lab_id = (computer_lab_id ?? computerLabId) || null;
     if (hasTemplate) normalizedData.template_id = template_id ?? templateId;
     if (hasStart) normalizedData.start_time = startTime ?? req.body.start_time;
     if (hasEnd) normalizedData.end_time = endTime ?? req.body.end_time;

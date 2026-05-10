@@ -18,6 +18,11 @@ function getClientIp(req) {
   return req.socket?.remoteAddress || req.ip || '0.0.0.0';
 }
 
+function isLoopbackIp(ip) {
+  const value = String(ip || '').replace(/^::ffff:/, '');
+  return value === '::1' || value === '127.0.0.1' || value === 'localhost';
+}
+
 /**
  * POST /api/proctor/log-ip
  * Called by the client on each test action (start, answer, submit, heartbeat).
@@ -30,7 +35,8 @@ router.post('/log-ip', authenticateToken, async (req, res) => {
     }
 
     const requestIp = getClientIp(req);
-    const ipAddress = (typeof clientIp === 'string' && clientIp.trim()) ? clientIp.trim() : requestIp;
+    const browserIp = (typeof clientIp === 'string' && clientIp.trim()) ? clientIp.trim() : null;
+    const ipAddress = isLoopbackIp(requestIp) && browserIp ? browserIp : requestIp;
     const userAgent = req.headers['user-agent'] || '';
 
     // Log the IP

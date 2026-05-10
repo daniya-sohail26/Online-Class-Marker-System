@@ -51,22 +51,32 @@ export async function checkAssignedLabIp(sb, { attemptId, studentId, testId, ipA
   const updatePayload = { assigned_ip: expectedIp, ip_mismatch: ipMismatch };
 
   if (ipMismatch) {
+    const { data: existingMismatchLog } = await sb
+      .from('ip_logs')
+      .select('id')
+      .eq('attempt_id', attemptId)
+      .eq('action', 'unauthorized_ip')
+      .limit(1)
+      .maybeSingle();
+
     const { data: attempt } = await sb
       .from('attempts')
       .select('violations')
       .eq('id', attemptId)
       .maybeSingle();
 
-    await sb.from('ip_logs').insert({
-      attempt_id: attemptId,
-      student_id: studentId,
-      test_id: testId,
-      ip_address: ipAddress,
-      action: 'unauthorized_ip',
-      is_vpn: false,
-    });
+    if (!existingMismatchLog) {
+      await sb.from('ip_logs').insert({
+        attempt_id: attemptId,
+        student_id: studentId,
+        test_id: testId,
+        ip_address: ipAddress,
+        action: 'unauthorized_ip',
+        is_vpn: false,
+      });
 
-    updatePayload.violations = (attempt?.violations || 0) + 1;
+      updatePayload.violations = (attempt?.violations || 0) + 1;
+    }
     updatePayload.ip_locked = true;
   }
 
@@ -230,7 +240,7 @@ export async function getIpAuditLog(sb, attemptId) {
   const safeLogs = logs || [];
   const initialIp = safeLogs.find((l) => l?.ip_address)?.ip_address || null;
   const ipChangesByAction = safeLogs.filter((l) => l.action === 'ip_change').length;
-  const unauthorizedIpCount = safeLogs.filter((l) => l.action === 'unauthorized_ip').length;
+  const unauthorizedIpCount = safeLogs.some((l) => l.action === 'unauthorized_ip') ? 1 : 0;
   const duplicateIpCount = safeLogs.filter((l) => l.action === 'duplicate_ip').length;
   const distinctIps = new Set(safeLogs.map((l) => l.ip_address).filter(Boolean));
   const ipChangesByDistinctIp = Math.max(0, distinctIps.size - 1);
