@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -14,6 +14,11 @@ import {
   TableHead,
   TableRow,
   Chip,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { ArrowLeft, Eye, Download } from "lucide-react";
 import ExamReportView from "../components/ExamReportView";
@@ -29,6 +34,7 @@ export default function EvaluationDashboard() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [pdfLoadingAttemptId, setPdfLoadingAttemptId] = useState(null);
   const [error, setError] = useState("");
+  const [filters, setFilters] = useState({ search: "", status: "", result: "" });
 
   const glassCardStyle = {
     p: 4,
@@ -128,6 +134,20 @@ export default function EvaluationDashboard() {
     }
   };
 
+  const filteredAttempts = useMemo(() => {
+    const q = filters.search.trim().toLowerCase();
+    return attempts.filter((attempt) => {
+      const status = attempt.in_progress ? "in_progress" : "submitted";
+      const result = attempt.passed === true ? "pass" : attempt.passed === false ? "fail" : "pending";
+      const matchesSearch = !q || [attempt.test_name, attempt.student_name, attempt.enrollment_number, attempt.initial_ip, attempt.last_ip].some((value) =>
+        String(value || "").toLowerCase().includes(q)
+      );
+      const matchesStatus = !filters.status || filters.status === status;
+      const matchesResult = !filters.result || filters.result === result;
+      return matchesSearch && matchesStatus && matchesResult;
+    });
+  }, [attempts, filters]);
+
   if (listLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
@@ -166,6 +186,26 @@ export default function EvaluationDashboard() {
 
       {view === "list" && (
         <Card sx={glassCardStyle}>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr 1fr" }, gap: 2, mb: 3 }}>
+            <TextField label="Filter attempts" value={filters.search} onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))} />
+            <FormControl>
+              <InputLabel>Status</InputLabel>
+              <Select value={filters.status} label="Status" onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}>
+                <MenuItem value="">All statuses</MenuItem>
+                <MenuItem value="in_progress">In progress</MenuItem>
+                <MenuItem value="submitted">Submitted</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl>
+              <InputLabel>Result</InputLabel>
+              <Select value={filters.result} label="Result" onChange={(e) => setFilters((prev) => ({ ...prev, result: e.target.value }))}>
+                <MenuItem value="">All results</MenuItem>
+                <MenuItem value="pass">Pass</MenuItem>
+                <MenuItem value="fail">Fail</MenuItem>
+                <MenuItem value="pending">Pending</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -181,14 +221,14 @@ export default function EvaluationDashboard() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {attempts.length === 0 ? (
+                {filteredAttempts.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} align="center" sx={{ color: "rgba(255,255,255,0.5)", py: 4, borderBottom: "none" }}>
                       No attempts found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  attempts.map((attempt) => (
+                  filteredAttempts.map((attempt) => (
                     <TableRow key={attempt.attempt_id} sx={{ "&:hover": { bgcolor: "rgba(255,255,255,0.02)" } }}>
                       <TableCell sx={{ color: "#fff", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                         {attempt.test_name}
@@ -243,6 +283,20 @@ export default function EvaluationDashboard() {
                               size="small"
                               sx={{ bgcolor: "rgba(6,182,212,0.12)", color: "#67e8f9", fontWeight: 700, fontSize: "10px", height: 20 }}
                             />
+                            {(attempt.unauthorized_ip_count ?? 0) > 0 && (
+                              <Chip
+                                label={`Wrong lab IP: ${attempt.unauthorized_ip_count}`}
+                                size="small"
+                                sx={{ bgcolor: "rgba(239,68,68,0.14)", color: "#f87171", fontWeight: 800, fontSize: "10px", height: 20 }}
+                              />
+                            )}
+                            {(attempt.duplicate_ip_count ?? 0) > 0 && (
+                              <Chip
+                                label={`Shared IP: ${attempt.duplicate_ip_count}`}
+                                size="small"
+                                sx={{ bgcolor: "rgba(245,158,11,0.15)", color: "#fbbf24", fontWeight: 800, fontSize: "10px", height: 20 }}
+                              />
+                            )}
                             {(attempt.vpn_detected === true) && (
                               <Chip
                                 label="VPN detected"

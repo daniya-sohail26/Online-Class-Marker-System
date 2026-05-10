@@ -85,12 +85,20 @@ router.get('/evaluation', authenticateToken, requireRole('teacher'), async (req,
         if (!acc[log.attempt_id]) {
           acc[log.attempt_id] = {
             ipChangeCount: 0,
+            unauthorizedIpCount: 0,
+            duplicateIpCount: 0,
             vpnDetected: false,
             lastIp: null,
           };
         }
         if (log.action === 'ip_change') {
           acc[log.attempt_id].ipChangeCount += 1;
+        }
+        if (log.action === 'unauthorized_ip') {
+          acc[log.attempt_id].unauthorizedIpCount += 1;
+        }
+        if (log.action === 'duplicate_ip') {
+          acc[log.attempt_id].duplicateIpCount += 1;
         }
         if (log.is_vpn) {
           acc[log.attempt_id].vpnDetected = true;
@@ -107,7 +115,7 @@ router.get('/evaluation', authenticateToken, requireRole('teacher'), async (req,
       const cid = t?.course_id;
       const su = userMap[att.student_id];
       const en = cid ? enrollMap[`${att.student_id}|${cid}`] : null;
-      const ipStats = ipStatsMap[att.id] || { ipChangeCount: 0, vpnDetected: false, lastIp: null };
+      const ipStats = ipStatsMap[att.id] || { ipChangeCount: 0, unauthorizedIpCount: 0, duplicateIpCount: 0, vpnDetected: false, lastIp: null };
       return {
         attempt_id: att.id,
         test_name: t?.name || 'Untitled Test',
@@ -123,8 +131,10 @@ router.get('/evaluation', authenticateToken, requireRole('teacher'), async (req,
         initial_ip: ipStats.lastIp || null,
         last_ip: ipStats.lastIp,
         ip_change_count: ipStats.ipChangeCount,
+        unauthorized_ip_count: ipStats.unauthorizedIpCount,
+        duplicate_ip_count: ipStats.duplicateIpCount,
         vpn_detected: ipStats.vpnDetected,
-        ip_locked: ipStats.ipChangeCount > 0,
+        ip_locked: ipStats.ipChangeCount > 0 || ipStats.unauthorizedIpCount > 0 || ipStats.duplicateIpCount > 0,
       };
     });
 

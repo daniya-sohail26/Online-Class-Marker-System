@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -74,6 +74,14 @@ export default function TeacherDashboard() {
   const [selectedCourseForDetails, setSelectedCourseForDetails] = useState(null);
   const [courseQuestions, setCourseQuestions] = useState([]);
   const [courseDrillDownLoading, setCourseDrillDownLoading] = useState(false);
+  const [dashboardFilters, setDashboardFilters] = useState({
+    courseSearch: "",
+    testSearch: "",
+    testStatus: "",
+    templateSearch: "",
+    templateType: "",
+    studentSearch: "",
+  });
 
   const normalizeCourseId = (value) => (value == null ? "" : String(value));
 
@@ -267,6 +275,49 @@ export default function TeacherDashboard() {
     }
   };
 
+  const updateDashboardFilter = (key, value) => {
+    setDashboardFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const filteredCourses = useMemo(() => {
+    const q = dashboardFilters.courseSearch.trim().toLowerCase();
+    return courses.filter((course) =>
+      !q || [course.name, course.department].some((value) => String(value || "").toLowerCase().includes(q))
+    );
+  }, [courses, dashboardFilters.courseSearch]);
+
+  const filteredTests = useMemo(() => {
+    const q = dashboardFilters.testSearch.trim().toLowerCase();
+    return tests.filter((test) => {
+      const courseName = courses.find((c) => normalizeCourseId(c.id) === normalizeCourseId(test.courseId || test.course_id))?.name || "";
+      const status = String(test.status || "").toLowerCase();
+      const matchesSearch = !q || [test.name, test.title, test.id, courseName, status].some((value) =>
+        String(value || "").toLowerCase().includes(q)
+      );
+      const matchesStatus = !dashboardFilters.testStatus || status === dashboardFilters.testStatus;
+      return matchesSearch && matchesStatus;
+    });
+  }, [tests, courses, dashboardFilters.testSearch, dashboardFilters.testStatus]);
+
+  const filteredTemplates = useMemo(() => {
+    const q = dashboardFilters.templateSearch.trim().toLowerCase();
+    return templates.filter((template) => {
+      const type = String(template.type || template.template_type || "").toLowerCase();
+      const matchesSearch = !q || [template.name, type].some((value) => String(value || "").toLowerCase().includes(q));
+      const matchesType = !dashboardFilters.templateType || type === dashboardFilters.templateType;
+      return matchesSearch && matchesType;
+    });
+  }, [templates, dashboardFilters.templateSearch, dashboardFilters.templateType]);
+
+  const filteredStudents = useMemo(() => {
+    const q = dashboardFilters.studentSearch.trim().toLowerCase();
+    return students.filter((student) =>
+      !q || [student.name, student.email, student.enrollmentNumber, student.enrollment_number].some((value) =>
+        String(value || "").toLowerCase().includes(q)
+      )
+    );
+  }, [students, dashboardFilters.studentSearch]);
+
   if (loading) {
     return (
       <Box sx={{
@@ -387,8 +438,15 @@ export default function TeacherDashboard() {
                       Your Academic Courses
                       <Box sx={{ height: "1px", flexGrow: 1, bgcolor: "rgba(255,255,255,0.05)" }} />
                     </Typography>
+                    <TextField
+                      fullWidth
+                      label="Filter courses"
+                      value={dashboardFilters.courseSearch}
+                      onChange={(e) => updateDashboardFilter("courseSearch", e.target.value)}
+                      sx={{ mb: 3 }}
+                    />
                     <Grid container spacing={3}>
-                      {courses.map((course) => (
+                      {filteredCourses.map((course) => (
                         <Grid item xs={12} sm={6} md={4} key={course.id}>
                           <Card
                             onClick={async () => {
@@ -444,7 +502,7 @@ export default function TeacherDashboard() {
                               <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 'auto' }}>
                                 <Box sx={{ display: "flex", gap: 1 }}>
                                   <Chip
-                                    label={`${students.filter(s => s.courseId === course.id).length} Students`}
+                                    label={`${filteredStudents.filter(s => normalizeCourseId(s.courseId || s.course_id) === normalizeCourseId(course.id)).length} Students`}
                                     size="small"
                                     sx={{ bgcolor: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.6)", fontWeight: 700 }}
                                   />
@@ -501,7 +559,7 @@ export default function TeacherDashboard() {
                                   </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                  {tests.filter(t => t.courseId === selectedCourseForDetails).map(test => (
+                                  {filteredTests.filter(t => normalizeCourseId(t.courseId || t.course_id) === normalizeCourseId(selectedCourseForDetails)).map(test => (
                                     <TableRow key={test.id} hover>
                                       <TableCell sx={{ py: 2, fontWeight: 600 }}>{test.name}</TableCell>
                                       <TableCell>
@@ -510,7 +568,7 @@ export default function TeacherDashboard() {
                                       <TableCell sx={{ textAlign: "center", fontWeight: 700 }}>{test.totalQuestions}</TableCell>
                                     </TableRow>
                                   ))}
-                                  {tests.filter(t => t.courseId === selectedCourseForDetails).length === 0 && (
+                                  {filteredTests.filter(t => normalizeCourseId(t.courseId || t.course_id) === normalizeCourseId(selectedCourseForDetails)).length === 0 && (
                                     <TableRow>
                                       <TableCell colSpan={3} sx={{ py: 4, textAlign: "center", color: "rgba(255,255,255,0.2)" }}>No tests found for this course</TableCell>
                                     </TableRow>
@@ -535,13 +593,13 @@ export default function TeacherDashboard() {
                                   </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                  {students.filter(s => s.courseId === selectedCourseForDetails).map(student => (
+                                  {filteredStudents.filter(s => normalizeCourseId(s.courseId || s.course_id) === normalizeCourseId(selectedCourseForDetails)).map(student => (
                                     <TableRow key={student.id} hover>
                                       <TableCell sx={{ py: 2, fontWeight: 600 }}>{student.name}</TableCell>
                                       <TableCell sx={{ color: "rgba(255,255,255,0.4)" }}>{student.enrollmentNumber}</TableCell>
                                     </TableRow>
                                   ))}
-                                  {students.filter(s => s.courseId === selectedCourseForDetails).length === 0 && (
+                                  {filteredStudents.filter(s => normalizeCourseId(s.courseId || s.course_id) === normalizeCourseId(selectedCourseForDetails)).length === 0 && (
                                     <TableRow>
                                       <TableCell colSpan={2} sx={{ py: 4, textAlign: "center", color: "rgba(255,255,255,0.2)" }}>No students enrolled</TableCell>
                                     </TableRow>
@@ -595,6 +653,28 @@ export default function TeacherDashboard() {
                 <Typography variant="h4" sx={{ fontWeight: 900 }}>Manage Tests</Typography>
               </Box>
 
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" }, gap: 2, mb: 3 }}>
+                <TextField
+                  label="Filter tests"
+                  value={dashboardFilters.testSearch}
+                  onChange={(e) => updateDashboardFilter("testSearch", e.target.value)}
+                />
+                <FormControl>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={dashboardFilters.testStatus}
+                    label="Status"
+                    onChange={(e) => updateDashboardFilter("testStatus", e.target.value)}
+                  >
+                    <MenuItem value="">All statuses</MenuItem>
+                    <MenuItem value="published">Published</MenuItem>
+                    <MenuItem value="scheduled">Scheduled</MenuItem>
+                    <MenuItem value="completed">Completed</MenuItem>
+                    <MenuItem value="draft">Draft</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+
               <TableContainer sx={{
                 bgcolor: "rgba(255,255,255,0.01)",
                 borderRadius: "32px",
@@ -611,7 +691,7 @@ export default function TeacherDashboard() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {tests.map((test) => (
+                    {filteredTests.map((test) => (
                       <TableRow key={test.id} hover sx={{
                         "&:hover": { bgcolor: "rgba(255,255,255,0.02) !important" },
                         borderBottom: "1px solid rgba(255,255,255,0.03)"
@@ -663,8 +743,24 @@ export default function TeacherDashboard() {
               <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 5 }}>
                 <Typography variant="h4" sx={{ fontWeight: 900 }}>Prototypes</Typography>
               </Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" }, gap: 2, mb: 3 }}>
+                <TextField
+                  label="Filter templates"
+                  value={dashboardFilters.templateSearch}
+                  onChange={(e) => updateDashboardFilter("templateSearch", e.target.value)}
+                />
+                <FormControl>
+                  <InputLabel>Type</InputLabel>
+                  <Select value={dashboardFilters.templateType} label="Type" onChange={(e) => updateDashboardFilter("templateType", e.target.value)}>
+                    <MenuItem value="">All types</MenuItem>
+                    <MenuItem value="quiz">Quiz</MenuItem>
+                    <MenuItem value="midterm">Midterm</MenuItem>
+                    <MenuItem value="final">Final</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
               <Grid container spacing={3}>
-                {templates.map((template) => (
+                {filteredTemplates.map((template) => (
                   <Grid item xs={12} sm={6} md={4} key={template.id}>
                     <Card sx={{
                       height: "100%",
@@ -714,6 +810,13 @@ export default function TeacherDashboard() {
           {activeCard === "students" && (
             <Box>
               <Typography variant="h4" sx={{ fontWeight: 900, mb: 5 }}>Roster</Typography>
+              <TextField
+                fullWidth
+                label="Filter roster"
+                value={dashboardFilters.studentSearch}
+                onChange={(e) => updateDashboardFilter("studentSearch", e.target.value)}
+                sx={{ mb: 3 }}
+              />
               <Box sx={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {courses.map(course => (
                   <Box key={course.id}>
@@ -721,7 +824,7 @@ export default function TeacherDashboard() {
                       <Typography variant="h6" sx={{ fontWeight: 800, color: "#00DDB3" }}>{course.name}</Typography>
                       <Box sx={{ flexGrow: 1, height: "1px", bgcolor: "rgba(255,255,255,0.05)" }} />
                       <Chip
-                        label={`${students.filter(s => s.courseId === course.id).length} ENROLLED`}
+                        label={`${filteredStudents.filter(s => normalizeCourseId(s.courseId || s.course_id) === normalizeCourseId(course.id)).length} ENROLLED`}
                         size="small"
                         sx={{ bgcolor: "rgba(0,221,179,0.1)", color: "#00DDB3", fontWeight: 900, fontSize: "10px" }}
                       />
@@ -741,7 +844,7 @@ export default function TeacherDashboard() {
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {students.filter(s => s.courseId === course.id).map((student) => (
+                          {filteredStudents.filter(s => normalizeCourseId(s.courseId || s.course_id) === normalizeCourseId(course.id)).map((student) => (
                             <TableRow key={student.id} hover sx={{
                               "&:hover": { bgcolor: "rgba(255,255,255,0.02) !important" },
                               borderBottom: "1px solid rgba(255,255,255,0.03)"
@@ -750,7 +853,7 @@ export default function TeacherDashboard() {
                               <TableCell sx={{ fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>#{student.enrollmentNumber}</TableCell>
                             </TableRow>
                           ))}
-                          {students.filter(s => s.courseId === course.id).length === 0 && (
+                          {filteredStudents.filter(s => normalizeCourseId(s.courseId || s.course_id) === normalizeCourseId(course.id)).length === 0 && (
                             <TableRow>
                               <TableCell colSpan={2} sx={{ py: 4, textAlign: "center", color: "rgba(255,255,255,0.2)" }}>No students enrolled in this course</TableCell>
                             </TableRow>

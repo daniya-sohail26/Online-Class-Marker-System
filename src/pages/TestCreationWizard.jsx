@@ -31,6 +31,8 @@ import { getCourseQuestions } from '../api/questionApi.js';
 import { createTest, getTestById, updateTest } from '../api/testApi.js';
 import { getAllCourses } from '../api/courseApi.js';
 import { getActiveTemplates } from '../api/templateApi.js';
+import { getAllStudents } from '../api/studentApi.js';
+import { createLab, getLabs } from '../api/labApi.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { toPKTDisplay, toPKTInputValue, pktInputToUTC } from '../utils/pktTime.js';
 
@@ -54,6 +56,11 @@ export default function TestCreationWizard() {
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [students, setStudents] = useState([]);
+  const [labs, setLabs] = useState([]);
+  const [selectedLabId, setSelectedLabId] = useState('');
+  const [labDialogOpen, setLabDialogOpen] = useState(false);
+  const [labDraft, setLabDraft] = useState({ name: '', description: '', ips: '' });
 
   // --- QUESTIONS STATE ---
   const [availableQuestions, setAvailableQuestions] = useState([]);
@@ -81,12 +88,16 @@ export default function TestCreationWizard() {
       setLoadingCourses(true);
       setLoadingTemplates(true);
       try {
-        const [coursesData, templatesData] = await Promise.all([
+        const [coursesData, templatesData, studentsData, labsData] = await Promise.all([
           getAllCourses(),
-          getActiveTemplates()
+          getActiveTemplates(),
+          getAllStudents(),
+          getLabs()
         ]);
         setCourses(coursesData);
         setTemplates(templatesData);
+        setStudents(studentsData || []);
+        setLabs(labsData || []);
 
         if (isEditing) {
           setLoading(true);
@@ -95,6 +106,7 @@ export default function TestCreationWizard() {
           setTestName(testData.name || '');
           setSelectedCourse(testData.courseId || '');
           setSelectedTemplate(testData.templateId || '');
+          setSelectedLabId(testData.computer_lab_id || testData.computerLabId || '');
           setSelectedQuestions(testData.questionIds || []);
           console.log("Set selectedQuestions to:", testData.questionIds);
 
@@ -266,6 +278,7 @@ export default function TestCreationWizard() {
         questionIds: selectedQuestions,
         startTime: pktInputToUTC(startTime),
         endTime: pktInputToUTC(endTime),
+        computerLabId: selectedLabId || null,
         isPublished: true,
       };
 
@@ -285,6 +298,26 @@ export default function TestCreationWizard() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const selectedCourseStudents = students.filter((student) => String(student.courseId || student.course_id) === String(selectedCourse));
+  const selectedLab = labs.find((lab) => String(lab.id) === String(selectedLabId));
+
+  const handleCreateLab = async () => {
+    try {
+      if (!labDraft.name.trim() || !labDraft.ips.trim()) {
+        setError('Lab name and IP list are required.');
+        return;
+      }
+      const lab = await createLab(labDraft);
+      setLabs((prev) => [...prev, lab].sort((a, b) => String(a.name).localeCompare(String(b.name))));
+      setSelectedLabId(lab.id);
+      setLabDialogOpen(false);
+      setLabDraft({ name: '', description: '', ips: '' });
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Could not create computer lab.');
     }
   };
 
@@ -340,6 +373,47 @@ export default function TestCreationWizard() {
               </Select>
             </FormControl>
 
+            <Box sx={{ p: 2, mb: 3, borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", bgcolor: "rgba(255,255,255,0.02)" }}>
+              <Typography variant="subtitle2" sx={{ mb: 2, display: "flex", alignItems: "center", gap: 1 }}>
+                <Filter size={16} /> Question filters
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Source</InputLabel>
+                    <Select
+                      value={questionFilters.sourceType}
+                      label="Source"
+                      onChange={(e) => setQuestionFilters((prev) => ({ ...prev, sourceType: e.target.value }))}
+                    >
+                      <MenuItem value="">All sources</MenuItem>
+                      <MenuItem value="AI">AI</MenuItem>
+                      <MenuItem value="MANUAL">Manual</MenuItem>
+                      <MenuItem value="HYBRID">Hybrid</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Difficulty</InputLabel>
+                    <Select
+                      value={questionFilters.difficulty}
+                      label="Difficulty"
+                      onChange={(e) => setQuestionFilters((prev) => ({ ...prev, difficulty: e.target.value }))}
+                    >
+                      <MenuItem value="">All difficulty</MenuItem>
+                      <MenuItem value="Easy">Easy</MenuItem>
+                      <MenuItem value="Medium">Medium</MenuItem>
+                      <MenuItem value="Hard">Hard</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+              <Typography variant="caption" sx={{ mt: 1.5, display: "block", color: "rgba(255,255,255,0.45)" }}>
+                {loadingQuestions ? "Loading matching questions..." : `${availableQuestions.length} matching questions found, ${selectedQuestions.length} selected`}
+              </Typography>
+            </Box>
+
             {selectedCourse && (
               <Alert
                 severity="info"
@@ -381,6 +455,37 @@ export default function TestCreationWizard() {
             <Alert severity="info" sx={{ mb: 3, borderRadius: "12px" }}>
               {selectedQuestions.length} questions auto-selected from course question bank
             </Alert>
+
+            <Box sx={{ p: 2.5, mb: 3, borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", bgcolor: "rgba(255,255,255,0.02)" }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 2, mb: 2 }}>
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>Computer Lab IP Assignment</Typography>
+                  <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.5)" }}>
+                    Optional. If selected, each enrolled student gets one expected lab PC IP for this test.
+                  </Typography>
+                </Box>
+                <Button variant="outlined" size="small" onClick={() => setLabDialogOpen(true)} sx={{ textTransform: "none" }}>
+                  Add Lab
+                </Button>
+              </Box>
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel>Allowed Lab</InputLabel>
+                <Select value={selectedLabId} label="Allowed Lab" onChange={(e) => setSelectedLabId(e.target.value)}>
+                  <MenuItem value="">No fixed lab IPs</MenuItem>
+                  {labs.map((lab) => (
+                    <MenuItem key={lab.id} value={lab.id}>
+                      {lab.name} ({lab.ips?.length || 0} IPs)
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {selectedLabId && (
+                <Alert severity={(selectedLab?.ips?.length || 0) >= selectedCourseStudents.length ? "success" : "warning"} sx={{ borderRadius: "12px" }}>
+                  {selectedLab?.name || "Selected lab"} has {selectedLab?.ips?.length || 0} IPs for {selectedCourseStudents.length} enrolled students.
+                  Students will be assigned IPs in enrollment order when the test is saved.
+                </Alert>
+              )}
+            </Box>
 
             <TextField
               fullWidth
@@ -438,6 +543,12 @@ export default function TestCreationWizard() {
                   <Box>
                     <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>TEMPLATE</Typography>
                     <Typography variant="body1" sx={{ color: "#00DDB3", fontWeight: 700 }}>{templates.find(t => t.id === selectedTemplate)?.name || 'None Selected'}</Typography>
+                  </Box>
+                  <Box sx={{ mt: 3 }}>
+                    <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.4)", fontWeight: 700, letterSpacing: "1px" }}>LAB IP POLICY</Typography>
+                    <Typography variant="body1" sx={{ color: selectedLab ? "#06B6D4" : "rgba(255,255,255,0.65)", fontWeight: 700 }}>
+                      {selectedLab ? `${selectedLab.name} (${selectedLab.ips?.length || 0} IPs)` : 'No fixed lab selected'}
+                    </Typography>
                   </Box>
                 </Grid>
 
@@ -562,6 +673,40 @@ export default function TestCreationWizard() {
           </Box>
         </Card>
       </motion.div>
+
+      <Dialog open={labDialogOpen} onClose={() => setLabDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ bgcolor: "#161F3D", color: "#fff" }}>Add Computer Lab</DialogTitle>
+        <DialogContent sx={{ bgcolor: "#161F3D", color: "#fff", pt: 3 }}>
+          <TextField
+            fullWidth
+            label="Lab Name"
+            value={labDraft.name}
+            onChange={(e) => setLabDraft((prev) => ({ ...prev, name: e.target.value }))}
+            sx={{ mt: 1, mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Description"
+            value={labDraft.description}
+            onChange={(e) => setLabDraft((prev) => ({ ...prev, description: e.target.value }))}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            multiline
+            minRows={5}
+            label="Allowed IPs"
+            placeholder={"192.168.10.11\n192.168.10.12\n192.168.10.13"}
+            value={labDraft.ips}
+            onChange={(e) => setLabDraft((prev) => ({ ...prev, ips: e.target.value }))}
+            helperText="One IP per line, or comma-separated. The first enrolled student gets the first IP, and so on."
+          />
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: "#161F3D", p: 3 }}>
+          <Button onClick={() => setLabDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleCreateLab}>Save Lab</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Question Preview Dialog */}
       <Dialog

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -27,6 +27,10 @@ export default function AdminStudents() {
   const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [courses, setCourses] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [search, setSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [courseFilter, setCourseFilter] = useState("");
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -38,14 +42,17 @@ export default function AdminStudents() {
     if (!supabase) {
       setStudents([]);
       setCourses([]);
+      setDepartments([]);
       return;
     }
-    const [studentRes, courseRes] = await Promise.all([
-      supabase.from("students").select("*, users(name, email), courses(name)"),
-      supabase.from("courses").select("*"),
+    const [studentRes, courseRes, deptRes] = await Promise.all([
+      supabase.from("students").select("*, users(name, email), courses(id, name, department_id, departments(name))"),
+      supabase.from("courses").select("*, departments(name)"),
+      supabase.from("departments").select("*").order("name", { ascending: true }),
     ]);
     if (!studentRes.error) setStudents(studentRes.data || []);
     if (!courseRes.error) setCourses(courseRes.data || []);
+    if (!deptRes.error) setDepartments(deptRes.data || []);
   };
 
   useEffect(() => {
@@ -75,6 +82,20 @@ export default function AdminStudents() {
     handleClose();
   };
 
+  const filteredStudents = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return students.filter((s) => {
+      const course = s.courses || courses.find((c) => c.id === s.course_id) || {};
+      const departmentName = course.departments?.name || departments.find((d) => d.id === course.department_id)?.name || "";
+      const matchesSearch = !q || [s.users?.name, s.users?.email, s.enrollment_number, course.name, departmentName].some((value) =>
+        String(value || "").toLowerCase().includes(q)
+      );
+      const matchesDepartment = !departmentFilter || course.department_id === departmentFilter;
+      const matchesCourse = !courseFilter || s.course_id === courseFilter;
+      return matchesSearch && matchesDepartment && matchesCourse;
+    });
+  }, [students, courses, departments, search, departmentFilter, courseFilter]);
+
   return (
     <Box sx={{ width: "100%", p: 4 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 5 }}>
@@ -90,6 +111,26 @@ export default function AdminStudents() {
         </Box>
       </Box>
 
+      <Card sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr 1fr" }, gap: 2 }}>
+          <TextField label="Search students" value={search} onChange={(e) => setSearch(e.target.value)} size="small" />
+          <FormControl size="small">
+            <InputLabel>Department</InputLabel>
+            <Select value={departmentFilter} label="Department" onChange={(e) => setDepartmentFilter(e.target.value)}>
+              <MenuItem value="">All departments</MenuItem>
+              {departments.map((d) => <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl size="small">
+            <InputLabel>Course</InputLabel>
+            <Select value={courseFilter} label="Course" onChange={(e) => setCourseFilter(e.target.value)}>
+              <MenuItem value="">All courses</MenuItem>
+              {courses.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+            </Select>
+          </FormControl>
+        </Box>
+      </Card>
+
       <Card sx={{ overflow: "hidden" }}>
         <Table>
           <TableHead sx={{ bgcolor: "rgba(0,0,0,0.2)" }}>
@@ -97,15 +138,17 @@ export default function AdminStudents() {
               <TableCell>Name</TableCell>
               <TableCell>Email</TableCell>
               <TableCell>Enrollment #</TableCell>
+              <TableCell>Department</TableCell>
               <TableCell>Course</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {students.map((s) => (
+            {filteredStudents.map((s) => (
               <TableRow key={s.id} hover>
                 <TableCell>{s.users?.name}</TableCell>
                 <TableCell>{s.users?.email}</TableCell>
                 <TableCell>{s.enrollment_number}</TableCell>
+                <TableCell>{s.courses?.departments?.name || departments.find((d) => d.id === s.courses?.department_id)?.name || "—"}</TableCell>
                 <TableCell>{s.courses?.name}</TableCell>
               </TableRow>
             ))}

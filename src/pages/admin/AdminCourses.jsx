@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -31,6 +31,8 @@ export default function AdminCourses() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [departmentId, setDepartmentId] = useState("");
+  const [search, setSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
 
   const fetchData = async () => {
     if (!supabase) {
@@ -83,6 +85,18 @@ export default function AdminCourses() {
     fetchData();
   };
 
+  const filteredCourses = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return courses.filter((course) => {
+      const departmentName = course.departments?.name || departments.find((d) => d.id === course.department_id)?.name || "";
+      const matchesSearch = !q || [course.name, course.description, departmentName, course.id].some((value) =>
+        String(value || "").toLowerCase().includes(q)
+      );
+      const matchesDepartment = !departmentFilter || course.department_id === departmentFilter;
+      return matchesSearch && matchesDepartment;
+    });
+  }, [courses, departments, search, departmentFilter]);
+
   return (
     <Box sx={{ width: "100%", p: 4 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 5 }}>
@@ -95,22 +109,39 @@ export default function AdminCourses() {
         </Button>
       </Box>
 
+      <Card sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" }, gap: 2 }}>
+          <TextField label="Search courses" value={search} onChange={(e) => setSearch(e.target.value)} size="small" />
+          <FormControl size="small">
+            <InputLabel>Department</InputLabel>
+            <Select value={departmentFilter} label="Department" onChange={(e) => setDepartmentFilter(e.target.value)}>
+              <MenuItem value="">All departments</MenuItem>
+              {departments.map((d) => <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>)}
+            </Select>
+          </FormControl>
+        </Box>
+      </Card>
+
       <Card sx={{ overflow: "hidden" }}>
         <Table>
           <TableHead sx={{ bgcolor: "rgba(0,0,0,0.2)" }}>
             <TableRow>
+              <TableCell>Course ID</TableCell>
               <TableCell>Name</TableCell>
               <TableCell>Description</TableCell>
               <TableCell>Department</TableCell>
+              <TableCell>Created</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {courses.map((course) => (
+            {filteredCourses.map((course) => (
               <TableRow key={course.id} hover>
+                <TableCell sx={{ fontFamily: "monospace", fontSize: 12 }}>{course.id}</TableCell>
                 <TableCell>{course.name}</TableCell>
                 <TableCell>{course.description || "—"}</TableCell>
                 <TableCell>{course.departments?.name || departments.find((d) => d.id === course.department_id)?.name || "—"}</TableCell>
+                <TableCell>{course.created_at ? new Date(course.created_at).toLocaleDateString() : "—"}</TableCell>
                 <TableCell align="right">
                   <IconButton size="small" onClick={() => handleOpen(course)}><Pencil size={18} /></IconButton>
                   <IconButton size="small" color="error" onClick={() => handleDelete(course.id)}><Trash2 size={18} /></IconButton>

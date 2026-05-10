@@ -106,6 +106,58 @@ async function recalculateTotalMarks(testId) {
   return totalMarks;
 }
 
+function normalizeIpList(ips = []) {
+  return [...new Set(
+    ips
+      .map((ip) => String(ip || '').trim())
+      .filter(Boolean)
+  )];
+}
+
+async function assignLabIpsToTest({ testId, courseId, labId }) {
+  if (!testId) return;
+
+  await supabase.from('test_ip_assignments').delete().eq('test_id', testId);
+  if (!labId) return;
+
+  const [{ data: labIps, error: labIpError }, { data: students, error: studentError }] = await Promise.all([
+    supabase
+      .from('computer_lab_ips')
+      .select('ip_address')
+      .eq('lab_id', labId)
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('students')
+      .select('user_id, enrollment_number')
+      .eq('course_id', courseId)
+      .order('enrollment_number', { ascending: true }),
+  ]);
+
+  if (labIpError) throw labIpError;
+  if (studentError) throw studentError;
+
+  const ips = normalizeIpList((labIps || []).map((row) => row.ip_address));
+  const enrolled = students || [];
+  if (!ips.length) {
+    throw new Error('Selected lab has no IP addresses configured.');
+  }
+  if (ips.length < enrolled.length) {
+    throw new Error(`Selected lab has ${ips.length} IPs, but this course has ${enrolled.length} enrolled students.`);
+  }
+
+  const rows = enrolled.map((student, index) => ({
+    test_id: testId,
+    lab_id: labId,
+    student_id: student.user_id,
+    assigned_ip: ips[index],
+  }));
+
+  if (rows.length) {
+    const { error } = await supabase.from('test_ip_assignments').insert(rows);
+    if (error) throw error;
+  }
+}
+
 /**
  * POST /api/tests/generate-questions
  * Generate questions using Factory Pattern
@@ -166,6 +218,8 @@ router.post('/', authenticateToken, requireRole('teacher'), async (req, res) => 
       description,
       courseId,
       course_id,
+      computerLabId,
+      computer_lab_id,
       templateId,
       template_id,
       questionIds,
@@ -175,6 +229,8 @@ router.post('/', authenticateToken, requireRole('teacher'), async (req, res) => 
       end_time,
       isPublished,
       is_published,
+      computerLabId,
+      computer_lab_id,
     } = req.body;
 
     const normalizedData = {
@@ -183,6 +239,7 @@ router.post('/', authenticateToken, requireRole('teacher'), async (req, res) => 
       template_id: template_id || templateId,
       start_time: start_time || startTime,
       end_time: end_time || endTime,
+      computer_lab_id: computer_lab_id || computerLabId || null,
       // Default to true if not provided as per user requirements
       is_published: isPublished !== undefined ? isPublished : (is_published !== undefined ? is_published : true),
       created_by: req.user.id,
@@ -244,6 +301,11 @@ router.post('/', authenticateToken, requireRole('teacher'), async (req, res) => 
     await recalculateTotalMarks(testData.id);
 
     await syncTestSchedule(testData.id, normalizedData.start_time, normalizedData.end_time);
+    await assignLabIpsToTest({
+      testId: testData.id,
+      courseId: normalizedData.course_id,
+      labId: normalizedData.computer_lab_id,
+    });
 
     res.status(201).json(testData);
   } catch (error) {
@@ -356,6 +418,7 @@ router.get('/', async (req, res) => {
         ...test,
         id: test.id,
         courseId: test.course_id,
+        computerLabId: test.computer_lab_id,
         courseName: test.courses?.name || 'N/A',
         status: status,
         totalQuestions: qCountMap[test.id] || 0,
@@ -439,6 +502,7 @@ router.get('/:id', async (req, res) => {
       ...data,
       id: data.id,
       courseId: data.course_id,
+      computerLabId: data.computer_lab_id,
       courseName: data.courses?.name || 'N/A',
       templateId: data.template_id,
       status: status,
@@ -469,7 +533,7 @@ router.put('/:id', async (req, res) => {
 
     const { data: existingTest, error: existingErr } = await supabase
       .from('tests')
-      .select('id, name, is_published, course_id, template_id, start_time, end_time')
+      .select('id, name, is_published, course_id, template_id, start_time, end_time, computer_lab_id')
       .eq('id', req.params.id)
       .maybeSingle();
 
@@ -480,6 +544,7 @@ router.put('/:id', async (req, res) => {
     const hasName = name !== undefined;
     const hasPublish = isPublished !== undefined || is_published !== undefined;
     const hasCourse = course_id !== undefined || courseId !== undefined;
+    const hasLab = computer_lab_id !== undefined || computerLabId !== undefined;
     const hasTemplate = template_id !== undefined || templateId !== undefined;
     const hasStart = startTime !== undefined || req.body.start_time !== undefined;
     const hasEnd = endTime !== undefined || req.body.end_time !== undefined;
@@ -498,6 +563,7 @@ router.put('/:id', async (req, res) => {
     if (hasName) normalizedData.name = name;
     if (hasPublish) normalizedData.is_published = isPublished !== undefined ? isPublished : is_published;
     if (hasCourse) normalizedData.course_id = course_id ?? courseId;
+    if (hasLab) normalizedData.computer_lab_id = computer_lab_id ?? computerLabId || null;
     if (hasTemplate) normalizedData.template_id = template_id ?? templateId;
     if (hasStart) normalizedData.start_time = startTime ?? req.body.start_time;
     if (hasEnd) normalizedData.end_time = endTime ?? req.body.end_time;
@@ -584,6 +650,14 @@ router.put('/:id', async (req, res) => {
         .from('test_questions')
         .update({ marks: questionMarkValue })
         .eq('test_id', req.params.id);
+    }
+
+    if (hasLab || hasCourse) {
+      await assignLabIpsToTest({
+        testId: req.params.id,
+        courseId: normalizedData.course_id || existingTest.course_id,
+        labId: hasLab ? normalizedData.computer_lab_id : existingTest.computer_lab_id,
+      });
     }
 
     await recalculateTotalMarks(req.params.id);

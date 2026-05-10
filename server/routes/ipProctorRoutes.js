@@ -1,7 +1,14 @@
 import express from 'express';
 import { supabase } from '../config/supabaseClient.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
-import { logIp, checkIpChange, detectCollisions, getIpAuditLog } from '../services/IpProctorService.js';
+import {
+  logIp,
+  checkIpChange,
+  detectCollisions,
+  getIpAuditLog,
+  checkAssignedLabIp,
+  checkDuplicateActiveIp,
+} from '../services/IpProctorService.js';
 
 const router = express.Router();
 
@@ -38,9 +45,23 @@ router.post('/log-ip', authenticateToken, async (req, res) => {
 
     // Check for IP change (skip on 'start' — that sets the initial IP)
     let ipChangeResult = { changed: false, autoSubmitted: false };
+    let assignedIpResult = { expectedIp: null, ipMismatch: false };
+    let duplicateIpResult = { duplicateIp: false, matchingStudentIds: [] };
     if (action !== 'start') {
       ipChangeResult = await checkIpChange(supabase, attemptId, ipAddress, req.user.id, testId);
     }
+    assignedIpResult = await checkAssignedLabIp(supabase, {
+      attemptId,
+      studentId: req.user.id,
+      testId,
+      ipAddress,
+    });
+    duplicateIpResult = await checkDuplicateActiveIp(supabase, {
+      attemptId,
+      studentId: req.user.id,
+      testId,
+      ipAddress,
+    });
 
     res.json({
       success: true,
@@ -49,6 +70,10 @@ router.post('/log-ip', authenticateToken, async (req, res) => {
       isVpn,
       ipChanged: ipChangeResult.changed,
       autoSubmitted: ipChangeResult.autoSubmitted,
+      expectedIp: assignedIpResult.expectedIp,
+      ipMismatch: assignedIpResult.ipMismatch,
+      duplicateIp: duplicateIpResult.duplicateIp,
+      matchingStudentIds: duplicateIpResult.matchingStudentIds,
     });
   } catch (error) {
     console.error('[Proctor] log-ip error:', error);

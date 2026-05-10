@@ -11,6 +11,11 @@ import {
   TableRow,
   CircularProgress,
   Chip,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { Users, BookOpen, Building2, GraduationCap, BarChart3, TrendingUp, Percent, Award } from "lucide-react";
 import { supabase } from "../../../server/config/supabaseClient";
@@ -33,6 +38,8 @@ export default function AdminAnalytics() {
   const [coursePerformance, setCoursePerformance] = useState([]);
   const [deptPerformance, setDeptPerformance] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [courseSearch, setCourseSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
 
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -71,7 +78,7 @@ export default function AdminAnalytics() {
             const course = courseMap[test.course_id];
             const totalMarks = test.total_marks || 100;
             const pct = a.score != null ? (Number(a.score) / totalMarks) * 100 : null;
-            return { ...a, course_id: test.course_id, course_name: course?.name, total_marks: totalMarks, pct };
+            return { ...a, course_id: test.course_id, course_name: course?.name, department_id: course?.department_id, total_marks: totalMarks, pct };
           })
           .filter(Boolean);
 
@@ -80,7 +87,7 @@ export default function AdminAnalytics() {
         attemptsWithCourse.forEach((a) => {
           const cid = a.course_id;
           if (!courseStats[cid]) {
-            courseStats[cid] = { name: a.course_name, scores: [], pcts: [], total: 0 };
+            courseStats[cid] = { name: a.course_name, department_id: a.department_id, scores: [], pcts: [], total: 0 };
           }
           if (a.score != null) {
             courseStats[cid].scores.push(Number(a.score));
@@ -96,6 +103,8 @@ export default function AdminAnalytics() {
           return {
             id,
             name: s.name,
+            departmentId: s.department_id,
+            departmentName: deptMap[s.department_id]?.name,
             attempts: s.total,
             avgScore: avg.toFixed(1),
             passCount: pass,
@@ -170,6 +179,18 @@ export default function AdminAnalytics() {
     { label: "Total Attempts", value: stats.attemptsTotal, icon: <TrendingUp size={28} />, color: "#10B981" },
   ];
 
+  const filteredCoursePerformance = coursePerformance.filter((course) => {
+    const q = courseSearch.trim().toLowerCase();
+    const matchesSearch = !q || [course.name, course.departmentName].some((value) => String(value || "").toLowerCase().includes(q));
+    const matchesDepartment = !departmentFilter || course.departmentId === departmentFilter;
+    return matchesSearch && matchesDepartment;
+  });
+
+  const filteredDeptPerformance = deptPerformance.filter((dept) => {
+    const q = courseSearch.trim().toLowerCase();
+    return !q || String(dept.name || "").toLowerCase().includes(q);
+  });
+
   if (loading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 400 }}>
@@ -239,6 +260,16 @@ export default function AdminAnalytics() {
         <Box sx={{ p: 3, borderBottom: "1px solid", borderColor: "divider" }}>
           <Typography variant="h6">Course-wise Performance</Typography>
           <Typography variant="body2" color="text.secondary">Average scores, pass/fail, and attempt counts per course.</Typography>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" }, gap: 2, mt: 2 }}>
+            <TextField label="Filter analytics" value={courseSearch} onChange={(e) => setCourseSearch(e.target.value)} size="small" />
+            <FormControl size="small">
+              <InputLabel>Department</InputLabel>
+              <Select value={departmentFilter} label="Department" onChange={(e) => setDepartmentFilter(e.target.value)}>
+                <MenuItem value="">All departments</MenuItem>
+                {deptPerformance.map((d) => <MenuItem key={d.id} value={d.id}>{d.name || "Unknown"}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Box>
         </Box>
         <Table>
           <TableHead sx={{ bgcolor: "rgba(0,0,0,0.2)" }}>
@@ -252,7 +283,7 @@ export default function AdminAnalytics() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {coursePerformance.map((c, i) => (
+            {filteredCoursePerformance.map((c, i) => (
               <TableRow key={i} hover>
                 <TableCell>{c.name}</TableCell>
                 <TableCell align="right">{c.attempts}</TableCell>
@@ -284,7 +315,7 @@ export default function AdminAnalytics() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {deptPerformance.map((d, i) => (
+            {filteredDeptPerformance.map((d, i) => (
               <TableRow key={i} hover>
                 <TableCell>{d.name}</TableCell>
                 <TableCell align="right">{d.attempts}</TableCell>

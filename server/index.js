@@ -17,6 +17,7 @@ import reportRoutes from './routes/reportRoutes.js';
 import testsRoutes from './routes/tests.js';
 import attemptRoutes from './routes/attemptRoutes.js';
 import ipProctorRoutes from './routes/ipProctorRoutes.js';
+import labRoutes from './routes/labRoutes.js';
 
 const app = express();
 app.use(cors());
@@ -36,6 +37,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/tests', testsRoutes);
 app.use('/api/attempts', attemptRoutes);
 app.use('/api/proctor', ipProctorRoutes);
+app.use('/api/labs', labRoutes);
 
 // --- Initialize Supabase ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -54,6 +56,15 @@ const upload = multer({ storage: multer.memoryStorage() });
 function mapGenerateQuestionsError(error) {
     const msg = error?.message || String(error);
     const status = error?.status ?? error?.statusCode;
+    if (error?.code?.startsWith?.('GEMINI_')) {
+        return {
+            http: status || 500,
+            error: msg,
+            code: error.code,
+            retryable: Boolean(error.retryable),
+            details: error.details,
+        };
+    }
     const lower = msg.toLowerCase();
     if (
         status === 403 ||
@@ -68,7 +79,7 @@ function mapGenerateQuestionsError(error) {
         };
     }
     if (status === 429 || lower.includes('resource_exhausted') || lower.includes('quota')) {
-        return { http: 429, error: 'Gemini rate limit or quota exceeded. Try again later.' };
+        return { http: 429, error: 'Gemini rate limit or quota exceeded. Try again later.', code: 'GEMINI_RATE_LIMIT', retryable: true };
     }
     if (lower.includes('gemini_api_key') || msg.includes('GEMINI_API_KEY')) {
         return { http: 503, error: msg };
@@ -95,8 +106,8 @@ app.post('/api/generate-questions', upload.array('files'), async (req, res) => {
 
     } catch (error) {
         console.error("\n>>> BACKEND CRASH ERROR:", error);
-        const { http, error: message } = mapGenerateQuestionsError(error);
-        res.status(http).json({ error: message });
+        const mapped = mapGenerateQuestionsError(error);
+        res.status(mapped.http).json(mapped);
     }
 });
 

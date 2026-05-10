@@ -76,10 +76,10 @@ router.get('/course/:courseId', authenticateToken, async (req, res) => {
 
     // Apply optional filters
     if (sourceType) {
-      query = query.eq('source_type', sourceType);
+      query = query.ilike('source_type', sourceType);
     }
     if (difficulty) {
-      query = query.eq('difficulty', difficulty);
+      query = query.ilike('difficulty', difficulty);
     }
 
     // Apply pagination

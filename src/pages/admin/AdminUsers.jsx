@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -12,12 +12,20 @@ import {
   IconButton,
   Switch,
   Avatar,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { UserCheck, UserX } from "lucide-react";
 import { supabase } from "../../../server/config/supabaseClient"; // <-- Added Supabase import
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const fetchUsers = async () => {
     if (!supabase) {
@@ -45,12 +53,48 @@ export default function AdminUsers() {
     return "default";
   };
 
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter((u) => {
+      const active = u.is_active ?? true;
+      const matchesSearch = !q || [u.name, u.email, u.role].some((value) =>
+        String(value || "").toLowerCase().includes(q)
+      );
+      const matchesRole = !roleFilter || u.role === roleFilter;
+      const matchesStatus = !statusFilter || (statusFilter === "active" ? active : !active);
+      return matchesSearch && matchesRole && matchesStatus;
+    });
+  }, [users, search, roleFilter, statusFilter]);
+
   return (
     <Box sx={{ width: "100%", p: 4 }}>
       <Box sx={{ mb: 5 }}>
         <Typography variant="h4" mb={1}>Users</Typography>
         <Typography variant="body1" color="text.secondary">Activate or deactivate user accounts across the institution.</Typography>
       </Box>
+
+      <Card sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "2fr 1fr 1fr" }, gap: 2 }}>
+          <TextField label="Search users" value={search} onChange={(e) => setSearch(e.target.value)} size="small" />
+          <FormControl size="small">
+            <InputLabel>Role</InputLabel>
+            <Select value={roleFilter} label="Role" onChange={(e) => setRoleFilter(e.target.value)}>
+              <MenuItem value="">All roles</MenuItem>
+              <MenuItem value="admin">Admin</MenuItem>
+              <MenuItem value="teacher">Teacher</MenuItem>
+              <MenuItem value="student">Student</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl size="small">
+            <InputLabel>Status</InputLabel>
+            <Select value={statusFilter} label="Status" onChange={(e) => setStatusFilter(e.target.value)}>
+              <MenuItem value="">All statuses</MenuItem>
+              <MenuItem value="active">Active</MenuItem>
+              <MenuItem value="inactive">Inactive</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+      </Card>
 
       <Card sx={{ overflow: "hidden" }}>
         <Table>
@@ -64,7 +108,7 @@ export default function AdminUsers() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {users.map((u) => (
+            {filteredUsers.map((u) => (
               <TableRow key={u.id} hover>
                 <TableCell sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                   <Avatar sx={{ width: 36, height: 36, bgcolor: "primary.main" }}>{u.name?.[0] || "?"}</Avatar>

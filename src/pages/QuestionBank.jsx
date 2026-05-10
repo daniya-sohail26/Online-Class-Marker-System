@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box, Typography, Grid, Card, TextField, Button, Tabs, Tab,
   Divider, Chip, Stack, IconButton, Paper, Avatar, Switch,
@@ -20,6 +20,32 @@ import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../../server/config/supabaseClient";
 
 const isValidUUID = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+async function readGenerateError(response) {
+  const payload = await response.json().catch(() => ({}));
+  const fallback = response.status === 429
+    ? "The question generator is handling too many requests right now. Please wait a moment and try again."
+    : response.status >= 500
+      ? "Something unexpected happened while preparing your questions. Please try again shortly."
+      : "We could not generate questions from this request. Please review the inputs and try again.";
+
+  const friendlyMessages = {
+    GEMINI_RATE_LIMIT: "The question generator is busy right now. Please wait a moment and try again.",
+    GEMINI_BUSY: "The question generator is temporarily busy. Please try again shortly.",
+    GEMINI_AUTH: "The question generator is not configured correctly. Please contact the system administrator.",
+    GEMINI_BLOCKED: "This request could not be processed. Please adjust the prompt or uploaded material and try again.",
+    GEMINI_EMPTY_RESPONSE: "No questions were generated. Please try again with a clearer prompt or fewer questions.",
+    GEMINI_BAD_JSON: "The generated response could not be prepared into questions. Please try again.",
+    GEMINI_BAD_SHAPE: "The generated response was incomplete. Please try again with fewer questions.",
+    GEMINI_FAILED: "Something unexpected happened while preparing your questions. Please try again.",
+  };
+
+  const error = new Error(friendlyMessages[payload.code] || fallback);
+  error.code = payload.code;
+  error.retryable = payload.retryable;
+  error.details = payload.error;
+  return error;
+}
 
 export default function QuestionBank() {
   const navigate = useNavigate();
@@ -56,6 +82,8 @@ export default function QuestionBank() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("new");
   const [currentDraftTestId, setCurrentDraftTestId] = useState(null);
   const [draftPickerValue, setDraftPickerValue] = useState("");
+  const [questionListFilters, setQuestionListFilters] = useState({ search: "", difficulty: "", source: "" });
+  const [archiveFilters, setArchiveFilters] = useState({ search: "", status: "" });
 
   // --- 🌟 3-STEP BRIDGE FETCHER 🌟 ---
   useEffect(() => {
@@ -271,8 +299,7 @@ export default function QuestionBank() {
 
       const response = await fetch('http://localhost:5000/api/generate-questions', { method: 'POST', body: formData });
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
-        throw new Error(errorBody.error || "Network response was not ok");
+        throw await readGenerateError(response);
       }
       
       const newQuestions = await response.json();
@@ -286,7 +313,8 @@ export default function QuestionBank() {
       if (formatted.length > 0) setActiveQuestionId(formatted[0].id);
 
     } catch (error) {
-      showToast(error.message || "Failed to generate questions. Ensure Node backend is running.", "error");
+      const retryHint = error.retryable ? " You can retry in a moment." : "";
+      showToast(`${error.message || "Something unexpected happened while preparing your questions."}${retryHint}`, "error");
     } finally {
       setIsGenerating(false);
     }
@@ -307,8 +335,7 @@ export default function QuestionBank() {
 
       const response = await fetch('http://localhost:5000/api/generate-questions', { method: 'POST', body: formData });
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
-        throw new Error(errorBody.error || "Network error");
+        throw await readGenerateError(response);
       }
 
       const newQuestions = await response.json();
@@ -321,7 +348,8 @@ export default function QuestionBank() {
         }
       }
     } catch (error) {
-      showToast(error.message || "Failed to regenerate this specific question.", "error");
+      const retryHint = error.retryable ? " You can retry in a moment." : "";
+      showToast(`${error.message || "Something unexpected happened while rewriting this question."}${retryHint}`, "error");
     } finally {
       setRegeneratingIds(prev => prev.filter(reqId => reqId !== id));
     }
@@ -512,8 +540,35 @@ export default function QuestionBank() {
     }
   };
 
-  const unscheduledExams = pastExams.filter((exam) => !exam.isPublished);
-  const scheduledExams = pastExams.filter((exam) => exam.isPublished);
+  const visibleQuestions = useMemo(() => {
+    const q = questionListFilters.search.trim().toLowerCase();
+    const list = workspaceMode === "sandbox" ? aiDrafts : officialBank;
+    return list.filter((question) => {
+      const source = question.isAiGenerated ? "AI" : "MANUAL";
+      const matchesSearch = !q || [question.text, question.explanation, question.difficulty, source].some((value) =>
+        String(value || "").toLowerCase().includes(q)
+      );
+      const matchesDifficulty = !questionListFilters.difficulty || question.difficulty === questionListFilters.difficulty;
+      const matchesSource = !questionListFilters.source || source === questionListFilters.source;
+      return matchesSearch && matchesDifficulty && matchesSource;
+    });
+  }, [workspaceMode, aiDrafts, officialBank, questionListFilters]);
+
+  const filteredPastExams = useMemo(() => {
+    const q = archiveFilters.search.trim().toLowerCase();
+    return pastExams.filter((exam) => {
+      const status = exam.isPublished ? "scheduled" : "draft";
+      const matchesSearch = !q || [exam.title, exam.date, exam.qs, status].some((value) =>
+        String(value || "").toLowerCase().includes(q)
+      );
+      const matchesStatus = !archiveFilters.status || archiveFilters.status === status;
+      return matchesSearch && matchesStatus;
+    });
+  }, [pastExams, archiveFilters]);
+
+  const allUnscheduledExams = pastExams.filter((exam) => !exam.isPublished);
+  const unscheduledExams = filteredPastExams.filter((exam) => !exam.isPublished);
+  const scheduledExams = filteredPastExams.filter((exam) => exam.isPublished);
 
   return (
     <Box sx={{ animation: "fadeIn 0.5s ease", pb: 10, color: "#fff", minHeight: "100vh" }}>
@@ -532,14 +587,14 @@ export default function QuestionBank() {
                 Database Error: Course Mapping Missing
               </Typography>
             )}
-            {unscheduledExams.length > 0 && (
+            {allUnscheduledExams.length > 0 && (
               <FormControl variant="standard" sx={{ minWidth: 280 }}>
                 <Select
                   value={draftPickerValue}
                   onChange={(e) => {
                     const draftId = e.target.value;
                     setDraftPickerValue(draftId);
-                    const picked = unscheduledExams.find((draft) => draft.id === draftId);
+                    const picked = allUnscheduledExams.find((draft) => draft.id === draftId);
                     if (picked) handleOpenDraftInGenerator(picked);
                   }}
                   displayEmpty
@@ -547,7 +602,7 @@ export default function QuestionBank() {
                   sx={{ color: "#06B6D4", fontSize: "0.95rem", fontWeight: 700 }}
                 >
                   <MenuItem value="" disabled>Select Unscheduled Draft</MenuItem>
-                  {unscheduledExams.map((draft) => (
+                  {allUnscheduledExams.map((draft) => (
                     <MenuItem key={draft.id} value={draft.id}>{draft.title}</MenuItem>
                   ))}
                 </Select>
@@ -679,8 +734,42 @@ export default function QuestionBank() {
                     )}
                   </Box>
 
+                  <Stack spacing={1.5} sx={{ mb: 2 }}>
+                    <TextField
+                      size="small"
+                      label="Filter questions"
+                      value={questionListFilters.search}
+                      onChange={(e) => setQuestionListFilters((prev) => ({ ...prev, search: e.target.value }))}
+                    />
+                    <Stack direction="row" spacing={1}>
+                      <FormControl size="small" fullWidth>
+                        <Select
+                          value={questionListFilters.difficulty}
+                          onChange={(e) => setQuestionListFilters((prev) => ({ ...prev, difficulty: e.target.value }))}
+                          displayEmpty
+                        >
+                          <MenuItem value="">All difficulty</MenuItem>
+                          <MenuItem value="Easy">Easy</MenuItem>
+                          <MenuItem value="Medium">Medium</MenuItem>
+                          <MenuItem value="Hard">Hard</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <FormControl size="small" fullWidth>
+                        <Select
+                          value={questionListFilters.source}
+                          onChange={(e) => setQuestionListFilters((prev) => ({ ...prev, source: e.target.value }))}
+                          displayEmpty
+                        >
+                          <MenuItem value="">All source</MenuItem>
+                          <MenuItem value="AI">AI</MenuItem>
+                          <MenuItem value="MANUAL">Manual</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Stack>
+                  </Stack>
+
                   <List sx={{ flexGrow: 1, overflowY: "auto", px: 0 }}>
-                    {(workspaceMode === "sandbox" ? aiDrafts : officialBank).map((q, idx) => (
+                    {visibleQuestions.map((q, idx) => (
                       <ListItem 
                         key={q.id} 
                         disablePadding 
@@ -710,7 +799,7 @@ export default function QuestionBank() {
                         </ListItemButton>
                       </ListItem>
                     ))}
-                    {(workspaceMode === "sandbox" ? aiDrafts : officialBank).length === 0 && <Box sx={{ textAlign: 'center', mt: 10, opacity: 0.5 }}><Typography variant="body2">List is empty. Only unused questions appear here.</Typography></Box>}
+                    {visibleQuestions.length === 0 && <Box sx={{ textAlign: 'center', mt: 10, opacity: 0.5 }}><Typography variant="body2">No questions match the current filters.</Typography></Box>}
                   </List>
 
                   {workspaceMode === "sandbox" && aiDrafts.length > 0 && (
@@ -797,6 +886,24 @@ export default function QuestionBank() {
       {/* TAB 1: ARCHIVES */}
       {activeTab === 1 && (
         <Box sx={{ height: "100%", overflowY: "auto" }}>
+          <Card sx={{ p: 2, mb: 3, borderRadius: "20px", bgcolor: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.05)" }}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+              <TextField
+                fullWidth
+                label="Filter exams"
+                value={archiveFilters.search}
+                onChange={(e) => setArchiveFilters((prev) => ({ ...prev, search: e.target.value }))}
+              />
+              <FormControl sx={{ minWidth: 220 }}>
+                <InputLabel>Status</InputLabel>
+                <Select value={archiveFilters.status} label="Status" onChange={(e) => setArchiveFilters((prev) => ({ ...prev, status: e.target.value }))}>
+                  <MenuItem value="">All statuses</MenuItem>
+                  <MenuItem value="draft">Unscheduled drafts</MenuItem>
+                  <MenuItem value="scheduled">Scheduled exams</MenuItem>
+                </Select>
+              </FormControl>
+            </Stack>
+          </Card>
           {unscheduledExams.length > 0 && (
             <Card sx={{ p: 3, mb: 3, borderRadius: "24px", bgcolor: "rgba(6, 182, 212, 0.04)", border: "1px solid rgba(6, 182, 212, 0.2)" }}>
               <Typography variant="h6" sx={{ fontWeight: 900, mb: 2, color: "#06B6D4" }}>Unscheduled Test Drafts</Typography>

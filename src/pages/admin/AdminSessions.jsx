@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -26,6 +26,7 @@ export default function AdminSessions() {
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [search, setSearch] = useState("");
 
   const fetchSessions = async () => {
     if (!supabase) {
@@ -74,6 +75,13 @@ export default function AdminSessions() {
     fetchSessions();
   };
 
+  const filteredSessions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return sessions.filter((s) =>
+      !q || [s.name, s.start_date, s.end_date, s.id].some((value) => String(value || "").toLowerCase().includes(q))
+    );
+  }, [sessions, search]);
+
   return (
     <Box sx={{ width: "100%", p: 4 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 5 }}>
@@ -86,6 +94,10 @@ export default function AdminSessions() {
         </Button>
       </Box>
 
+      <Card sx={{ p: 2, mb: 3 }}>
+        <TextField fullWidth label="Search sessions" value={search} onChange={(e) => setSearch(e.target.value)} size="small" />
+      </Card>
+
       <Card sx={{ overflow: "hidden" }}>
         <Table>
           <TableHead sx={{ bgcolor: "rgba(0,0,0,0.2)" }}>
@@ -97,7 +109,7 @@ export default function AdminSessions() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {sessions.map((s) => (
+            {filteredSessions.map((s) => (
               <TableRow key={s.id} hover>
                 <TableCell>{s.name}</TableCell>
                 <TableCell>{s.start_date}</TableCell>

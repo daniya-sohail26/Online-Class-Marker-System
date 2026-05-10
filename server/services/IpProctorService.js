@@ -34,6 +34,101 @@ export async function logIp(sb, { attemptId, studentId, testId, ipAddress, actio
   return { isVpn };
 }
 
+export async function checkAssignedLabIp(sb, { attemptId, studentId, testId, ipAddress }) {
+  const { data: assignment } = await sb
+    .from('test_ip_assignments')
+    .select('assigned_ip')
+    .eq('test_id', testId)
+    .eq('student_id', studentId)
+    .maybeSingle();
+
+  if (!assignment?.assigned_ip) {
+    return { expectedIp: null, ipMismatch: false };
+  }
+
+  const expectedIp = assignment.assigned_ip;
+  const ipMismatch = expectedIp !== ipAddress;
+  const updatePayload = { assigned_ip: expectedIp, ip_mismatch: ipMismatch };
+
+  if (ipMismatch) {
+    const { data: attempt } = await sb
+      .from('attempts')
+      .select('violations')
+      .eq('id', attemptId)
+      .maybeSingle();
+
+    await sb.from('ip_logs').insert({
+      attempt_id: attemptId,
+      student_id: studentId,
+      test_id: testId,
+      ip_address: ipAddress,
+      action: 'unauthorized_ip',
+      is_vpn: false,
+    });
+
+    updatePayload.violations = (attempt?.violations || 0) + 1;
+    updatePayload.ip_locked = true;
+  }
+
+  await sb.from('attempts').update(updatePayload).eq('id', attemptId).catch(() => {});
+  return { expectedIp, ipMismatch };
+}
+
+export async function checkDuplicateActiveIp(sb, { attemptId, studentId, testId, ipAddress }) {
+  const { data: activeAttempts } = await sb
+    .from('attempts')
+    .select('id, student_id')
+    .eq('test_id', testId)
+    .is('submitted_at', null)
+    .neq('id', attemptId);
+
+  const otherAttemptIds = (activeAttempts || []).map((a) => a.id);
+  if (!otherAttemptIds.length) {
+    await sb.from('attempts').update({ duplicate_ip_detected: false }).eq('id', attemptId).catch(() => {});
+    return { duplicateIp: false, matchingStudentIds: [] };
+  }
+
+  const { data: matchingLogs } = await sb
+    .from('ip_logs')
+    .select('attempt_id, student_id')
+    .in('attempt_id', otherAttemptIds)
+    .eq('ip_address', ipAddress);
+
+  const matchingStudentIds = [...new Set((matchingLogs || []).map((log) => log.student_id).filter((id) => id && id !== studentId))];
+  const duplicateIp = matchingStudentIds.length > 0;
+
+  if (duplicateIp) {
+    const { data: attempt } = await sb
+      .from('attempts')
+      .select('violations')
+      .eq('id', attemptId)
+      .maybeSingle();
+
+    await sb.from('ip_logs').insert({
+      attempt_id: attemptId,
+      student_id: studentId,
+      test_id: testId,
+      ip_address: ipAddress,
+      action: 'duplicate_ip',
+      is_vpn: false,
+    });
+
+    await sb
+      .from('attempts')
+      .update({
+        duplicate_ip_detected: true,
+        ip_locked: true,
+        violations: (attempt?.violations || 0) + 1,
+      })
+      .eq('id', attemptId)
+      .catch(() => {});
+  } else {
+    await sb.from('attempts').update({ duplicate_ip_detected: false }).eq('id', attemptId).catch(() => {});
+  }
+
+  return { duplicateIp, matchingStudentIds };
+}
+
 /**
  * Compare current IP against the initial IP recorded for the attempt.
  * If changed → auto-submit the test, flag it, log the ip_change event.
@@ -74,7 +169,7 @@ export async function checkIpChange(sb, attemptId, currentIp, studentId, testId)
   const updatePayload = {
     violations: (attempt.violations || 0) + 1,
   };
-  await sb.from('attempts').update(updatePayload).eq('id', attemptId).catch(() => {});
+  await sb.from('attempts').update({ ...updatePayload, ip_locked: true }).eq('id', attemptId).catch(() => {});
 
   return { changed: true, autoSubmitted: false };
 }
@@ -135,16 +230,20 @@ export async function getIpAuditLog(sb, attemptId) {
   const safeLogs = logs || [];
   const initialIp = safeLogs.find((l) => l?.ip_address)?.ip_address || null;
   const ipChangesByAction = safeLogs.filter((l) => l.action === 'ip_change').length;
+  const unauthorizedIpCount = safeLogs.filter((l) => l.action === 'unauthorized_ip').length;
+  const duplicateIpCount = safeLogs.filter((l) => l.action === 'duplicate_ip').length;
   const distinctIps = new Set(safeLogs.map((l) => l.ip_address).filter(Boolean));
   const ipChangesByDistinctIp = Math.max(0, distinctIps.size - 1);
   const ipChanges = Math.max(ipChangesByAction, ipChangesByDistinctIp);
   const vpnDetected = safeLogs.some((l) => l.is_vpn);
-  const ipLocked = ipChanges > 0;
+  const ipLocked = ipChanges > 0 || unauthorizedIpCount > 0 || duplicateIpCount > 0;
 
   return {
     initialIp,
     ipLocked,
     ipChangeCount: ipChanges,
+    unauthorizedIpCount,
+    duplicateIpCount,
     vpnDetected,
     logs: safeLogs,
   };

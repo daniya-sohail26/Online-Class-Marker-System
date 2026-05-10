@@ -112,6 +112,7 @@ export default function ExaminationModule() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [proctorWarning, setProctorWarning] = useState("");
   const [meta, setMeta] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -217,6 +218,13 @@ export default function ExaminationModule() {
         }
 
         const payload = await response.json().catch(() => ({}));
+        if (payload?.ipMismatch) {
+          setProctorWarning(`This test is assigned to IP ${payload.expectedIp}, but your current IP is ${payload.ip}. The teacher has been notified.`);
+        } else if (payload?.duplicateIp) {
+          setProctorWarning("Another active student attempt is using this same IP. The teacher has been notified.");
+        } else if (payload?.ipChanged) {
+          setProctorWarning("Your IP changed during the exam. The teacher has been notified.");
+        }
         if (payload?.autoSubmitted) {
           submittedRef.current = true;
           if (timerRef.current) clearInterval(timerRef.current);
@@ -883,6 +891,11 @@ export default function ExaminationModule() {
           border: "1px solid rgba(0,221,179,0.15)",
         }}
       >
+        {proctorWarning && (
+          <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setProctorWarning("")}>
+            {proctorWarning}
+          </Alert>
+        )}
         <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "flex-start", md: "center" }}>
           <Box sx={{ flex: 1 }}>
             <Typography variant="h4" sx={{ fontWeight: 900, color: "#fff", mb: 0.5 }}>

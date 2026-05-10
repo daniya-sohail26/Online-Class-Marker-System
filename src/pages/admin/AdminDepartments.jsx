@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -25,6 +25,7 @@ export default function AdminDepartments() {
   const [editing, setEditing] = useState(null);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   const fetchDepartments = async () => {
     if (!supabase) {
@@ -70,6 +71,13 @@ export default function AdminDepartments() {
     fetchDepartments();
   };
 
+  const filteredDepartments = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return departments.filter((dept) =>
+      !q || [dept.name, dept.id].some((value) => String(value || "").toLowerCase().includes(q))
+    );
+  }, [departments, search]);
+
   return (
     <Box sx={{ width: "100%", p: 4 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 5 }}>
@@ -82,6 +90,10 @@ export default function AdminDepartments() {
         </Button>
       </Box>
 
+      <Card sx={{ p: 2, mb: 3 }}>
+        <TextField fullWidth label="Search departments" value={search} onChange={(e) => setSearch(e.target.value)} size="small" />
+      </Card>
+
       <Card sx={{ overflow: "hidden" }}>
         <Table>
           <TableHead sx={{ bgcolor: "rgba(0,0,0,0.2)" }}>
@@ -91,7 +103,7 @@ export default function AdminDepartments() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {departments.map((dept) => (
+            {filteredDepartments.map((dept) => (
               <TableRow key={dept.id} hover>
                 <TableCell>{dept.name}</TableCell>
                 <TableCell align="right">
