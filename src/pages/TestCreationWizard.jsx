@@ -26,7 +26,7 @@ import {
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Plus, Trash2, Eye, Filter, Save } from 'lucide-react';
+import { Plus, Trash2, Eye, Filter, Save, FileUp } from 'lucide-react';
 import { getCourseQuestions } from '../api/questionApi.js';
 import { createTest, getTestById, updateTest } from '../api/testApi.js';
 import { getAllCourses } from '../api/courseApi.js';
@@ -35,6 +35,55 @@ import { getAllStudents } from '../api/studentApi.js';
 import { createLab, getLabs } from '../api/labApi.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { toPKTDisplay, toPKTInputValue, pktInputToUTC } from '../utils/pktTime.js';
+
+function splitCsvLine(line) {
+  const cells = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"' && next === '"') {
+      current += '"';
+      i += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      cells.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  cells.push(current.trim());
+  return cells.map((cell) => cell.replace(/^"|"$/g, '').trim());
+}
+
+function extractIpsFromCsv(csvText) {
+  const rows = String(csvText || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map(splitCsvLine);
+
+  if (!rows.length) return [];
+
+  const header = rows[0].map((cell) => cell.toLowerCase().replace(/\s+/g, '_'));
+  const headerIpIndex = header.findIndex((cell) => ['ip', 'ip_address', 'ipaddress', 'allowed_ip', 'pc_ip'].includes(cell));
+  const hasHeader = headerIpIndex >= 0 || header.some((cell) => /[a-z]/i.test(cell));
+  const ipIndex = headerIpIndex >= 0 ? headerIpIndex : 0;
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+
+  return [...new Set(
+    dataRows
+      .map((row) => row[ipIndex])
+      .map((ip) => String(ip || '').trim())
+      .filter(Boolean)
+  )];
+}
 
 export default function TestCreationWizard() {
   const { testId } = useParams();
@@ -61,6 +110,7 @@ export default function TestCreationWizard() {
   const [selectedLabId, setSelectedLabId] = useState('');
   const [labDialogOpen, setLabDialogOpen] = useState(false);
   const [labDraft, setLabDraft] = useState({ name: '', description: '', ips: '' });
+  const [labCsvStatus, setLabCsvStatus] = useState('');
 
   // --- QUESTIONS STATE ---
   const [availableQuestions, setAvailableQuestions] = useState([]);
@@ -315,9 +365,37 @@ export default function TestCreationWizard() {
       setSelectedLabId(lab.id);
       setLabDialogOpen(false);
       setLabDraft({ name: '', description: '', ips: '' });
+      setLabCsvStatus('');
       setError('');
     } catch (err) {
       setError(err.message || 'Could not create computer lab.');
+    }
+  };
+
+  const handleLabCsvUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const csvText = await file.text();
+      const ips = extractIpsFromCsv(csvText);
+      if (!ips.length) {
+        setLabCsvStatus('No IP addresses were found in that CSV. Use a column named ip or ip_address, or put IPs in the first column.');
+        return;
+      }
+
+      setLabDraft((prev) => {
+        const existing = prev.ips
+          .split(/[\n,]+/)
+          .map((ip) => ip.trim())
+          .filter(Boolean);
+        const merged = [...new Set([...existing, ...ips])];
+        return { ...prev, ips: merged.join('\n') };
+      });
+      setLabCsvStatus(`${ips.length} IP${ips.length === 1 ? '' : 's'} imported from ${file.name}.`);
+    } catch (err) {
+      setLabCsvStatus(err.message || 'Could not read that CSV file.');
     }
   };
 
@@ -691,6 +769,32 @@ export default function TestCreationWizard() {
             onChange={(e) => setLabDraft((prev) => ({ ...prev, description: e.target.value }))}
             sx={{ mb: 2 }}
           />
+          <Box sx={{ mb: 2 }}>
+            <input
+              id="lab-ip-csv-upload"
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleLabCsvUpload}
+              style={{ display: 'none' }}
+            />
+            <Button
+              component="label"
+              htmlFor="lab-ip-csv-upload"
+              variant="outlined"
+              startIcon={<FileUp size={18} />}
+              sx={{ textTransform: 'none', borderRadius: '10px' }}
+            >
+              Upload IP CSV
+            </Button>
+            <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'rgba(255,255,255,0.5)' }}>
+              CSV can use an <strong>ip</strong> or <strong>ip_address</strong> column, or a single column of IPs.
+            </Typography>
+            {labCsvStatus && (
+              <Alert severity={labCsvStatus.startsWith('No IP') || labCsvStatus.startsWith('Could not') ? 'warning' : 'success'} sx={{ mt: 1.5, borderRadius: '10px' }}>
+                {labCsvStatus}
+              </Alert>
+            )}
+          </Box>
           <TextField
             fullWidth
             multiline

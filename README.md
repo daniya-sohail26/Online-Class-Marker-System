@@ -1,5 +1,10 @@
 # React + Vite
 
+## Project Documentation
+
+- [Installation and User Manual](./docs/INSTALLATION_MANUAL.md)
+- [Design Patterns Manual](./docs/DESIGN_PATTERNS_MANUAL.md)
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
